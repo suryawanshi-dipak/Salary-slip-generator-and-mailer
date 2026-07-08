@@ -101,6 +101,9 @@ public class SalarySlipGenerator extends JFrame {
     /** Dropdown combo box to filter the table by payroll month */
     private JComboBox<String> monthCombo;
     
+    /** In-memory storage for SMTP password */
+    private String smtpPassword = null;
+    
     // Dashboard stat labels
     private JLabel totalCountLbl;
     private JLabel generatedCountLbl;
@@ -639,13 +642,42 @@ public class SalarySlipGenerator extends JFrame {
         
         // Button action listener
         sendAllBtn.addActionListener(e -> {
-            JOptionPane.showMessageDialog(card, "Mails sent to all employees successfully!", "Send Mail", JOptionPane.INFORMATION_MESSAGE);
-            // Update all rows to 'Sent' state
+            // =========================================================
+            // MAIL SENDING INTEGRATION (BATCH MODE)
+            // =========================================================
+            if (smtpPassword == null) {
+                smtpPassword = promptForPassword();
+                if (smtpPassword == null) return;
+            }
+            
+            int totalSent = 0;
+            int totalFailed = 0;
+            int totalSkipped = 0;
+            String month = getFormattedMonth();
+            
             for (int i = 0; i < table.getRowCount(); i++) {
                 int modelRow = table.convertRowIndexToModel(i);
-                model.setValueAt("Sent", modelRow, 7);
+                String empId = (String) model.getValueAt(modelRow, 0);
+                
+                if (Utils.MailUtil.isSent(empId, month)) {
+                    totalSkipped++;
+                    continue; // Skip already sent
+                }
+                
+                boolean success = attemptSendSingleSlip(modelRow);
+                if (success) {
+                    model.setValueAt("Sent", modelRow, 7);
+                    totalSent++;
+                } else {
+                    model.setValueAt("Failed", modelRow, 7);
+                    totalFailed++;
+                }
             }
+            
             updateDashboardStats();
+            JOptionPane.showMessageDialog(card, 
+                "Batch send complete.\nSent: " + totalSent + "\nFailed: " + totalFailed + "\nSkipped (Already Sent): " + totalSkipped, 
+                "Send Mail", JOptionPane.INFORMATION_MESSAGE);
         });
         
         // Button hover effect
@@ -756,18 +788,51 @@ public class SalarySlipGenerator extends JFrame {
             });
 
             sendBtn.addActionListener(e -> {
+                // =========================================================
+                // MAIL SENDING INTEGRATION (INDIVIDUAL MODE)
+                // =========================================================
                 String name = (String) model.getValueAt(modelRow, 1);
+                String empId = (String) model.getValueAt(modelRow, 0);
+                String month = getFormattedMonth();
+                
+                // Check if already sent
+                if (Utils.MailUtil.isSent(empId, month)) {
+                    int res = JOptionPane.showConfirmDialog(this,
+                            name + " has already been sent a slip for this month. Send again?",
+                            "Already Sent", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+                    if (res != JOptionPane.YES_OPTION) {
+                        if (table.isEditing()) table.getCellEditor().stopCellEditing();
+                        return;
+                    }
+                }
+
+                if (smtpPassword == null) {
+                    smtpPassword = promptForPassword();
+                    if (smtpPassword == null) {
+                        if (table.isEditing()) table.getCellEditor().stopCellEditing();
+                        return; // User cancelled
+                    }
+                }
+
                 int confirm = JOptionPane.showConfirmDialog(this,
                         "Send salary slip to " + name + " via email?",
                         "Confirm Send", JOptionPane.YES_NO_OPTION,
                         JOptionPane.QUESTION_MESSAGE);
                         
                 if (confirm == JOptionPane.YES_OPTION) {
-                    model.setValueAt("Sent", modelRow, 7); // Update state to sent
-                    updateDashboardStats();
-                    JOptionPane.showMessageDialog(this,
-                            "Salary slip sent to " + name + " successfully.",
-                            "Sent", JOptionPane.INFORMATION_MESSAGE);
+                    boolean success = attemptSendSingleSlip(modelRow);
+                    if (success) {
+                        model.setValueAt("Sent", modelRow, 7); // Update state to sent
+                        updateDashboardStats();
+                        JOptionPane.showMessageDialog(this,
+                                "Salary slip sent to " + name + " successfully.",
+                                "Sent", JOptionPane.INFORMATION_MESSAGE);
+                    } else {
+                        model.setValueAt("Failed", modelRow, 7);
+                        JOptionPane.showMessageDialog(this,
+                                "Failed to send email to " + name + ". Check console for details.",
+                                "Error", JOptionPane.ERROR_MESSAGE);
+                    }
                 }
                 if (table.isEditing()) {
                     table.getCellEditor().stopCellEditing(); // Commit edit mode
@@ -920,6 +985,37 @@ public class SalarySlipGenerator extends JFrame {
             
             g2.dispose();
         }
+    }
+
+    /* ===================== MAILER HELPERS ===================== */
+    private String promptForPassword() {
+        JPasswordField pf = new JPasswordField();
+        int okCxl = JOptionPane.showConfirmDialog(this, pf, "Enter SMTP Password:", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (okCxl == JOptionPane.OK_OPTION) {
+            return new String(pf.getPassword());
+        }
+        return null;
+    }
+
+    // =========================================================
+    // MAIL SENDING INTEGRATION (CORE HELPER)
+    // Extracts data from the CSV row and passes it to MailUtil
+    // =========================================================
+    private boolean attemptSendSingleSlip(int modelRow) {
+        if (currentRawCsvData == null || modelRow >= currentRawCsvData.size()) return false;
+        String[] rawData = currentRawCsvData.get(modelRow);
+        
+        String empId = rawData.length > 1 ? rawData[1].trim() : "";
+        String name = rawData.length > 2 ? rawData[2].trim() : "";
+        String doj = rawData.length > 3 ? rawData[3].trim() : "";
+        String email = rawData.length > 21 ? rawData[21].trim() : "";
+        
+        String formattedMonth = getFormattedMonth();
+        String outputDir = System.getProperty("user.home") + java.io.File.separator + "SalarySlips" + java.io.File.separator + formattedMonth;
+        String filename = empId + "_" + formattedMonth + ".pdf";
+        java.io.File pdfFile = new java.io.File(outputDir, filename);
+
+        return Utils.MailUtil.sendAndTrackSlip(empId, formattedMonth, email, name, doj, pdfFile.getAbsolutePath(), smtpPassword);
     }
 
     /* ===================== MAIN ===================== */

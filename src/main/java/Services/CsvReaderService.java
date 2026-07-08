@@ -74,6 +74,7 @@ public class CsvReaderService {
                 String name = cols.length > 2 ? cols[2].trim() : "";
                 String rawBasic = cols.length > 4 ? cols[4].trim() : "";
                 String rawNet = cols.length > 19 ? cols[19].trim() : "";
+                String email = cols.length > 21 ? cols[21].trim() : "";
                 
                 // Validation checks
                 if (empId.isEmpty()) {
@@ -91,6 +92,9 @@ public class CsvReaderService {
                 if (rawNet.isEmpty()) {
                     errors.add("Row " + rowNum + ": Missing Net Salary.");
                     rawNet = "0";
+                }
+                if (email.isEmpty() || !email.contains("@")) {
+                    errors.add("Row " + rowNum + ": Missing or invalid Email for " + name + " (Will be flagged as unsendable).");
                 }
                 
                 // Formatting salary fields to include the Rupee (₹) symbol using Unicode escape to prevent encoding issues
