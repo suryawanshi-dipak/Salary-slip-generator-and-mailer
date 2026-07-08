@@ -1035,6 +1035,7 @@ public class SalarySlipGenerator extends JFrame {
             // Attach a sorter to our table model so column headers can be clicked to sort rows
             frame.table.setRowSorter(new TableRowSorter<>(frame.model));
             frame.setVisible(true); // Launch!
+            Utils.GitUtils.startUpdateCheck(frame);
         });
     }
 }

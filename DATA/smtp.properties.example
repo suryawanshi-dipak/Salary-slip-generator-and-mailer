@@ -1,0 +1,4 @@
+smtp.host=smtp.gmail.com
+smtp.port=587
+smtp.user=your-company-email@example.com
+smtp.from=your-company-email@example.com
