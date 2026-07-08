@@ -176,9 +176,38 @@ public class SalarySlipGenerator extends JFrame {
         
         // Upload Excel Button
         right.add(makeHeaderButton("\uE898", "Upload Excel", UPLOAD_GREEN, WHITE,
-                e -> JOptionPane.showMessageDialog(this,
-                        "Select an Excel file to upload employee data.",
-                        "Upload Excel", JOptionPane.INFORMATION_MESSAGE)));
+                e -> {
+                    JFileChooser chooser = new JFileChooser();
+                    chooser.setDialogTitle("Select Payroll CSV File");
+                    int res = chooser.showOpenDialog(this);
+                    if (res == JFileChooser.APPROVE_OPTION) {
+                        try {
+                            Services.CsvReaderService.CsvParseResult result = Services.CsvReaderService.parsePayrollCsv(chooser.getSelectedFile().getAbsolutePath());
+                            
+                            // Clear existing table data and inject parsed CSV rows
+                            model.setRowCount(0);
+                            for (Object[] row : result.rows) {
+                                model.addRow(row);
+                            }
+                            
+                            // Check if validation found any errors (e.g. missing IDs, missing names)
+                            if (!result.errors.isEmpty()) {
+                                // Display error report dialog
+                                JTextArea textArea = new JTextArea(12, 50);
+                                textArea.setText(String.join("\n", result.errors));
+                                textArea.setEditable(false);
+                                textArea.setFont(new Font("Monospaced", Font.PLAIN, 13));
+                                JScrollPane scrollPane = new JScrollPane(textArea);
+                                
+                                JOptionPane.showMessageDialog(this, scrollPane, "CSV Validation Report - Issues Found", JOptionPane.WARNING_MESSAGE);
+                            } else {
+                                JOptionPane.showMessageDialog(this, "Data loaded successfully from CSV! No errors found.", "Success", JOptionPane.INFORMATION_MESSAGE);
+                            }
+                        } catch (Exception ex) {
+                            JOptionPane.showMessageDialog(this, "Error reading file: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                        }
+                    }
+                }));
                         
         // Generate Slips Button
         right.add(makeHeaderButton("\uE74C", "Generate Slips", PRIMARY_PURPLE, WHITE,
