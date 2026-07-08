@@ -52,10 +52,7 @@ public class SalarySlipGenerator extends JFrame {
     private static final Color GREEN = new Color(22, 163, 74);
     private static final Color GREEN_LIGHT = new Color(220, 252, 231);
     private static final Color ORANGE = new Color(217, 119, 6);
-    private static final Color ORANGE_LIGHT = new Color(255, 243, 205);
     private static final Color RED = new Color(220, 38, 38);
-    private static final Color RED_LIGHT = new Color(254, 226, 226);
-    private static final Color BLUE_LIGHT = new Color(219, 234, 254);
     private static final Color BLUE_MID = new Color(37, 99, 235);
     private static final Color UPLOAD_GREEN = new Color(24, 184, 111);
     
@@ -71,7 +68,6 @@ public class SalarySlipGenerator extends JFrame {
     private static final Font FONT_CARD_NUM = new Font("Segoe UI", Font.BOLD, 24);
     private static final Font FONT_TABLE_HEAD = new Font("Segoe UI", Font.BOLD, 14);
     private static final Font FONT_TABLE_CELL = new Font("Segoe UI", Font.PLAIN, 14);
-    private static final Font FONT_BADGE = new Font("Segoe UI", Font.BOLD, 12);
     private static final Font FONT_FOOTER = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font FONT_TITLE = new Font("Segoe UI", Font.BOLD, 24);
     private static final Font FONT_LOGO = new Font("Segoe UI", Font.PLAIN, 13);
@@ -82,16 +78,7 @@ public class SalarySlipGenerator extends JFrame {
 
     /* ===================== DATA ===================== */
     // Initial static mock data for the employees table
-    private Object[][] data = {
-            { "E101", "Rahul Sharma", "IT Department", "₹45,000", "₹38,945", "May 2026", "Generated", "Sent" },
-            { "E102", "Priya Patil", "HR Department", "₹40,000", "₹34,560", "May 2026", "Generated", "Pending" },
-            { "E103", "Amit Joshi", "Finance Department", "₹50,000", "₹43,250", "May 2026", "Pending", "Failed" },
-            { "E104", "Sneha Kulkarni", "IT Department", "₹42,000", "₹36,180", "May 2026", "Pending", "Pending" },
-            { "E105", "Rohit Deshmukh", "Accounts Department", "₹38,000", "₹32,890", "May 2026", "Failed", "Failed" },
-            { "E106", "Neha Singh", "Marketing Department", "₹44,000", "₹37,950", "May 2026", "Generated", "Sent" },
-            { "E107", "Kiran Verma", "Sales Department", "₹41,000", "₹35,100", "May 2026", "Generated", "Pending" },
-            { "E108", "Vikas Reddy", "Support", "₹35,000", "₹30,000", "May 2026", "Generated", "Sent" }
-    };
+    private Object[][] data = {};
     
     // Column headers for the table
     private String[] cols = { "Emp ID", "Employee Name", "Department",
@@ -114,8 +101,11 @@ public class SalarySlipGenerator extends JFrame {
     /** Dropdown combo box to filter the table by payroll month */
     private JComboBox<String> monthCombo;
     
-    /** Reference label to dynamically update and display total employee count */
-    private JLabel totalLabel;
+    // Dashboard stat labels
+    private JLabel totalCountLbl;
+    private JLabel generatedCountLbl;
+    private JLabel pendingCountLbl;
+    private JLabel mailsSentCountLbl;
 
     /* ===================== CONSTRUCTOR ===================== */
     /**
@@ -142,6 +132,8 @@ public class SalarySlipGenerator extends JFrame {
     }
 
     /* ===================== HEADER ===================== */
+    private java.util.List<String[]> currentRawCsvData = new java.util.ArrayList<>();
+
     /**
      * Builds the top header panel including the logo, title, and action buttons.
      */
@@ -184,11 +176,15 @@ public class SalarySlipGenerator extends JFrame {
                         try {
                             Services.CsvReaderService.CsvParseResult result = Services.CsvReaderService.parsePayrollCsv(chooser.getSelectedFile().getAbsolutePath());
                             
+                            // Store the raw data for PDF Generation
+                            currentRawCsvData = result.rawRows;
+                            
                             // Clear existing table data and inject parsed CSV rows
                             model.setRowCount(0);
                             for (Object[] row : result.rows) {
                                 model.addRow(row);
                             }
+                            updateDashboardStats();
                             
                             // Check if validation found any errors (e.g. missing IDs, missing names)
                             if (!result.errors.isEmpty()) {
@@ -211,9 +207,38 @@ public class SalarySlipGenerator extends JFrame {
                         
         // Generate Slips Button
         right.add(makeHeaderButton("\uE74C", "Generate Slips", PRIMARY_PURPLE, WHITE,
-                e -> JOptionPane.showMessageDialog(this,
-                        "Generating salary slips for all employees…",
-                        "Generate Slips", JOptionPane.INFORMATION_MESSAGE)));
+                e -> {
+                    if (currentRawCsvData == null || currentRawCsvData.isEmpty()) {
+                        JOptionPane.showMessageDialog(this, "No data uploaded! Please upload a CSV first.", "Warning", JOptionPane.WARNING_MESSAGE);
+                        return;
+                    }
+                    
+                    String formattedMonth = getFormattedMonth();
+                    String outputDir = System.getProperty("user.home") + java.io.File.separator + "SalarySlips" + java.io.File.separator + formattedMonth;
+                    int successCount = 0;
+                    
+                    for (int i = 0; i < currentRawCsvData.size(); i++) {
+                        String[] rawRow = currentRawCsvData.get(i);
+                        // Skip empty rows or rows without an ID
+                        if (rawRow.length <= 1 || rawRow[1].trim().isEmpty()) continue;
+                        
+                        String empId = rawRow[1].trim();
+                        String filename = empId + "_" + formattedMonth + ".pdf";
+                        
+                        String path = Utils.PdfUtil.generateSalarySlip(rawRow, outputDir, formattedMonth, filename);
+                        if (path != null) {
+                            successCount++;
+                            if (i < model.getRowCount()) {
+                                model.setValueAt("Generated", i, 6); // Update slip status
+                            }
+                        }
+                    }
+                    updateDashboardStats();
+                    
+                    JOptionPane.showMessageDialog(this, 
+                        "Successfully generated " + successCount + " salary slips!\nSaved to: " + outputDir,
+                        "Generation Complete", JOptionPane.INFORMATION_MESSAGE);
+                }));
 
         header.add(left, BorderLayout.WEST);
         header.add(right, BorderLayout.EAST);
@@ -290,25 +315,20 @@ public class SalarySlipGenerator extends JFrame {
         dash.setOpaque(false);
         dash.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
 
+        totalCountLbl = new JLabel("0");
+        generatedCountLbl = new JLabel("0");
+        pendingCountLbl = new JLabel("0");
+        mailsSentCountLbl = new JLabel("0");
+
         // Add 4 stat cards
-        dash.add(makeCard("\uE716", "Total Employees", "106", PRIMARY_BLUE));
-        dash.add(makeCard("\uE73E", "Generated", "68", GREEN));
-        dash.add(makeCard("\uE916", "Pending", "28", ORANGE));
-        dash.add(makeCard("\uE715", "Mails Sent", "52", RED));
+        dash.add(makeCard("\uE716", "Total Employees", totalCountLbl, PRIMARY_BLUE));
+        dash.add(makeCard("\uE73E", "Generated", generatedCountLbl, GREEN));
+        dash.add(makeCard("\uE916", "Pending", pendingCountLbl, ORANGE));
+        dash.add(makeCard("\uE715", "Mails Sent", mailsSentCountLbl, RED));
         return dash;
     }
 
-    /**
-     * Helper to create an individual statistic card for the dashboard.
-     * Each card contains an icon, a descriptive label, and a highlighted numeric value.
-     * 
-     * @param iconCode  The Unicode string for the card's font icon.
-     * @param label     The textual description of the metric (e.g., "Total Employees").
-     * @param value     The initial numeric value string.
-     * @param iconColor The theme color for this specific card's icon and text.
-     * @return A populated ShadowPanel acting as the card.
-     */
-    private JPanel makeCard(String iconCode, String label, String value, Color iconColor) {
+    private JPanel makeCard(String iconCode, String label, JLabel valLbl, Color iconColor) {
         ShadowPanel card = new ShadowPanel();
         card.setLayout(new FlowLayout(FlowLayout.LEFT, 16, 10));
         card.setBackground(WHITE);
@@ -324,16 +344,72 @@ public class SalarySlipGenerator extends JFrame {
         JLabel lbl = new JLabel(label);
         lbl.setFont(FONT_SUB);
         lbl.setForeground(TEXT_MUTED);
-        totalLabel = lbl; // Save reference if needed later
-        JLabel val = new JLabel(value);
-        val.setFont(FONT_CARD_NUM);
-        val.setForeground(iconColor);
+        
+        valLbl.setFont(FONT_CARD_NUM);
+        valLbl.setForeground(iconColor);
+        
         info.add(lbl);
-        info.add(val);
+        info.add(valLbl);
 
         card.add(iconLbl);
         card.add(info);
         return card;
+    }
+
+    private void updateDashboardStats() {
+        if (model == null) return;
+        
+        int total = model.getRowCount();
+        int generated = 0;
+        int pending = 0;
+        int sent = 0;
+        
+        for (int i = 0; i < total; i++) {
+            String slipStatus = (String) model.getValueAt(i, 6);
+            String mailStatus = (String) model.getValueAt(i, 7);
+            
+            if ("Generated".equals(slipStatus)) generated++;
+            if ("Pending".equals(slipStatus)) pending++;
+            if ("Sent".equals(mailStatus)) sent++;
+        }
+        
+        if (totalCountLbl != null) totalCountLbl.setText(String.valueOf(total));
+        if (generatedCountLbl != null) generatedCountLbl.setText(String.valueOf(generated));
+        if (pendingCountLbl != null) pendingCountLbl.setText(String.valueOf(pending));
+        if (mailsSentCountLbl != null) mailsSentCountLbl.setText(String.valueOf(sent));
+    }
+
+    private String getFormattedMonth() {
+        String rawMonth = (String) monthCombo.getSelectedItem();
+        if (rawMonth == null) return "Unknown";
+        try {
+            java.time.format.DateTimeFormatter out = java.time.format.DateTimeFormatter.ofPattern("MMM-yy", java.util.Locale.ENGLISH);
+            java.time.LocalDate date = java.time.LocalDate.parse("01 " + rawMonth, java.time.format.DateTimeFormatter.ofPattern("dd MMMM yyyy", java.util.Locale.ENGLISH));
+            return date.format(out);
+        } catch (Exception e) {
+            return rawMonth.replace(" ", "-");
+        }
+    }
+
+    private void previewPdf(String pdfPath, String password) {
+        try {
+            org.apache.pdfbox.pdmodel.PDDocument document = org.apache.pdfbox.Loader.loadPDF(new java.io.File(pdfPath), password);
+            org.apache.pdfbox.rendering.PDFRenderer pdfRenderer = new org.apache.pdfbox.rendering.PDFRenderer(document);
+            // Render first page at 150 DPI for preview
+            java.awt.image.BufferedImage bim = pdfRenderer.renderImageWithDPI(0, 150, org.apache.pdfbox.rendering.ImageType.RGB);
+            document.close();
+            
+            JDialog previewDialog = new JDialog(this, "PDF Preview", true);
+            previewDialog.setSize(800, 1000);
+            previewDialog.setLocationRelativeTo(this);
+            
+            JLabel imageLabel = new JLabel(new ImageIcon(bim));
+            JScrollPane scrollPane = new JScrollPane(imageLabel);
+            previewDialog.add(scrollPane);
+            previewDialog.setVisible(true);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Error rendering PDF preview: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     /* ===================== TABLE SECTION ===================== */
@@ -569,6 +645,7 @@ public class SalarySlipGenerator extends JFrame {
                 int modelRow = table.convertRowIndexToModel(i);
                 model.setValueAt("Sent", modelRow, 7);
             }
+            updateDashboardStats();
         });
         
         // Button hover effect
@@ -638,10 +715,41 @@ public class SalarySlipGenerator extends JFrame {
             int modelRow = table.convertRowIndexToModel(row);
             
             viewBtn.addActionListener(e -> {
-                String name = (String) model.getValueAt(modelRow, 1);
-                JOptionPane.showMessageDialog(this,
-                        "Previewing salary slip for " + name,
-                        "Salary Slip Preview", JOptionPane.INFORMATION_MESSAGE);
+                if (currentRawCsvData == null || modelRow >= currentRawCsvData.size()) {
+                    JOptionPane.showMessageDialog(this, "No raw data found to generate PDF.", "Error", JOptionPane.ERROR_MESSAGE);
+                } else {
+                    try {
+                        String[] rawData = currentRawCsvData.get(modelRow);
+                        
+                        String empId = rawData.length > 1 && rawData[1] != null ? rawData[1].trim() : "";
+                        String name = rawData.length > 2 && rawData[2] != null ? rawData[2].trim() : "";
+                        String doj = rawData.length > 3 && rawData[3] != null ? rawData[3].trim() : "";
+                        
+                        String formattedMonth = getFormattedMonth();
+                        String outputDir = System.getProperty("user.home") + java.io.File.separator + "SalarySlips" + java.io.File.separator + formattedMonth;
+                        String filename = empId + "_" + formattedMonth + ".pdf";
+                        
+                        java.io.File pdfFile = new java.io.File(outputDir, filename);
+                        
+                        if (pdfFile.exists()) {
+                            String formattedDoj = doj;
+                            try {
+                                java.time.format.DateTimeFormatter inFormat = java.time.format.DateTimeFormatter.ofPattern("dd-MMM-yy", java.util.Locale.ENGLISH);
+                                java.time.format.DateTimeFormatter outFormat = java.time.format.DateTimeFormatter.ofPattern("ddMMyyyy");
+                                java.time.LocalDate date = java.time.LocalDate.parse(doj, inFormat);
+                                formattedDoj = date.format(outFormat);
+                            } catch (Exception ex) {}
+                            String pwd = empId + formattedDoj;
+                            
+                            previewPdf(pdfFile.getAbsolutePath(), pwd);
+                        } else {
+                            JOptionPane.showMessageDialog(this, "PDF not found for " + name + "!\nExpected path: " + pdfFile.getAbsolutePath(), "Error", JOptionPane.ERROR_MESSAGE);
+                        }
+                    } catch (Exception ex) {
+                        JOptionPane.showMessageDialog(this, "Error opening PDF: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                    }
+                }
+                
                 if (table.isEditing()) {
                     table.getCellEditor().stopCellEditing(); // Commit edit mode
                 }
@@ -656,6 +764,7 @@ public class SalarySlipGenerator extends JFrame {
                         
                 if (confirm == JOptionPane.YES_OPTION) {
                     model.setValueAt("Sent", modelRow, 7); // Update state to sent
+                    updateDashboardStats();
                     JOptionPane.showMessageDialog(this,
                             "Salary slip sent to " + name + " successfully.",
                             "Sent", JOptionPane.INFORMATION_MESSAGE);

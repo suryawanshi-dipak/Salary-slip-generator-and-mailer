@@ -16,10 +16,12 @@ public class CsvReaderService {
      */
     public static class CsvParseResult {
         public Object[][] rows;
+        public List<String[]> rawRows;
         public List<String> errors;
 
-        public CsvParseResult(Object[][] rows, List<String> errors) {
+        public CsvParseResult(Object[][] rows, List<String[]> rawRows, List<String> errors) {
             this.rows = rows;
+            this.rawRows = rawRows;
             this.errors = errors;
         }
     }
@@ -35,6 +37,7 @@ public class CsvReaderService {
     public static CsvParseResult parsePayrollCsv(String filePath) throws IOException {
         // List to hold the dynamically parsed rows before converting them to a 2D array
         List<Object[]> rows = new ArrayList<>();
+        List<String[]> rawRows = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         
         // Open the file using a BufferedReader for efficient line-by-line reading
@@ -65,6 +68,7 @@ public class CsvReaderService {
                 // ----------------------------------------------------
                 // Split the comma-separated line into an array of string columns
                 String[] cols = line.split(",");
+                rawRows.add(cols); // Store the full raw data for PDF generation later
                 
                 String empId = cols.length > 1 ? cols[1].trim() : "";
                 String name = cols.length > 2 ? cols[2].trim() : "";
@@ -89,9 +93,9 @@ public class CsvReaderService {
                     rawNet = "0";
                 }
                 
-                // Formatting salary fields to include the Rupee (₹) symbol
-                String basicSalary = "₹" + rawBasic;
-                String netSalary = "₹" + rawNet;
+                // Formatting salary fields to include the Rupee (₹) symbol using Unicode escape to prevent encoding issues
+                String basicSalary = "\u20B9" + rawBasic;
+                String netSalary = "\u20B9" + rawNet;
                 
                 // ----------------------------------------------------
                 // 3. Default Values & Mappings
@@ -121,6 +125,6 @@ public class CsvReaderService {
             }
         }
         
-        return new CsvParseResult(rows.toArray(new Object[0][]), errors);
+        return new CsvParseResult(rows.toArray(new Object[0][]), rawRows, errors);
     }
 }
