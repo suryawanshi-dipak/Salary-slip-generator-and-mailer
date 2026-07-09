@@ -101,8 +101,8 @@ public class SalarySlipGenerator extends JFrame {
     /** Dropdown combo box to filter the table by payroll month */
     private JComboBox<String> monthCombo;
     
-    /** In-memory storage for SMTP password */
-    private String smtpPassword = null;
+    /** In-memory storage for SMTP password, pre-loaded from smtp.properties */
+    private String smtpPassword = Utils.MailUtil.getSmtpPass();
     
     // Dashboard stat labels
     private JLabel totalCountLbl;
@@ -655,7 +655,7 @@ public class SalarySlipGenerator extends JFrame {
             // =========================================================
             // MAIL SENDING INTEGRATION (BATCH MODE)
             // =========================================================
-            if (smtpPassword == null) {
+            if (smtpPassword == null || smtpPassword.isEmpty()) {
                 smtpPassword = promptForPassword();
                 if (smtpPassword == null) return;
             }
@@ -816,7 +816,7 @@ public class SalarySlipGenerator extends JFrame {
                     }
                 }
 
-                if (smtpPassword == null) {
+                if (smtpPassword == null || smtpPassword.isEmpty()) {
                     smtpPassword = promptForPassword();
                     if (smtpPassword == null) {
                         if (table.isEditing()) table.getCellEditor().stopCellEditing();

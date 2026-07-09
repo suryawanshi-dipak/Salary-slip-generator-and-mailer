@@ -83,6 +83,22 @@ public class MailUtil {
         return smtpProps.getProperty("smtp.from", getSmtpUser());
     }
 
+    /**
+     * Retrieves the SMTP password from properties.
+     * @return The SMTP password, or empty string if not set
+     */
+    public static String getSmtpPass() {
+        return smtpProps.getProperty("smtp.pass", "");
+    }
+
+    /**
+     * Returns true if smtp.secure=true is set (implicit SSL, port 465).
+     * @return true for SSL mode, false for STARTTLS mode
+     */
+    public static boolean isSmtpSecure() {
+        return "true".equalsIgnoreCase(smtpProps.getProperty("smtp.secure", "false"));
+    }
+
     /* --- IDEMPOTENCY / LEDGER --- */
     /**
      * Checks if a salary slip has already been successfully sent to this employee for the given month.
@@ -202,9 +218,17 @@ public class MailUtil {
 
         Properties props = new Properties();
         props.put("mail.smtp.auth", "true");
-        props.put("mail.smtp.starttls.enable", "true");
         props.put("mail.smtp.host", host);
         props.put("mail.smtp.port", port);
+        if (isSmtpSecure()) {
+            // Port 465: implicit SSL
+            props.put("mail.smtp.ssl.enable", "true");
+            props.put("mail.smtp.socketFactory.port", port);
+            props.put("mail.smtp.socketFactory.class", "javax.net.ssl.SSLSocketFactory");
+        } else {
+            // Port 587: STARTTLS
+            props.put("mail.smtp.starttls.enable", "true");
+        }
 
         Session session = Session.getInstance(props, new Authenticator() {
             protected PasswordAuthentication getPasswordAuthentication() {
