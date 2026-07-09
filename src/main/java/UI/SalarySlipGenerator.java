@@ -122,6 +122,16 @@ public class SalarySlipGenerator extends JFrame {
         setMinimumSize(new Dimension(960, 640)); // Prevent shrinking too small
         setBackground(BG);
 
+        // Set application logo
+        try {
+            java.io.File logoFile = new java.io.File("DATA/logo.jpg");
+            if (logoFile.exists()) {
+                setIconImage(new ImageIcon(logoFile.getAbsolutePath()).getImage());
+            }
+        } catch (Exception e) {
+            System.err.println("Could not load application logo: " + e.getMessage());
+        }
+
         // Root panel holding everything
         JPanel root = new JPanel(new BorderLayout(0, 12));
         root.setBackground(BG);
