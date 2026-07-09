@@ -24,6 +24,8 @@ import java.io.FileNotFoundException;
 
 /**
  * Utility class for generating Salary Slip PDFs.
+ * This class uses the iText library to create a structured, password-protected PDF document.
+ * The password is derived from the employee's ID and Date of Joining (DOJ).
  */
 public class PdfUtil {
 
@@ -32,14 +34,43 @@ public class PdfUtil {
     private static final DeviceRgb GREY_BG = new DeviceRgb(200, 200, 200);
 
     /**
-     * Generates a PDF salary slip for a given employee row based on the raw CSV data.
+     * Generates a comprehensive, formatted PDF salary slip for an individual employee.
      * 
-     * @param rawData   The full string array of the CSV row
-     * @param monthString The formatted month string (e.g., "Jul-26")
-     * @param filename    The filename to save as (e.g., "VT0001_Jul-26.pdf")
-     * @return The absolute path of the generated PDF, or null if it fails.
+     * <p>This method takes a single row of employee data parsed from a CSV file and constructs
+     * a professional salary slip using the iText PDF library. The generated document includes
+     * a customized header with company branding, employee details, and a detailed breakdown
+     * of salary components (earnings and deductions).</p>
+     * 
+     * <h3>Document Structure:</h3>
+     * <ul>
+     *   <li><b>Header:</b> Contains the company logo and corporate address.</li>
+     *   <li><b>Employee Details:</b> Displays Name, Employee ID, Date of Joining, Designation, Department, Location, Leaves, and Paid Days.</li>
+     *   <li><b>Salary Details:</b> A tabular breakdown separating Fixed vs Earned components, Gross Salary, Deductions (PT, TDS), and final Net Pay.</li>
+     *   <li><b>Footer:</b> System generation disclaimer.</li>
+     * </ul>
+     * 
+     * <h3>Security:</h3>
+     * <p>The generated PDF is encrypted with 128-bit AES encryption. It requires a password to open.
+     * The password is a concatenation of the Employee ID and the Date of Joining formatted as {@code ddMMyyyy}
+     * (e.g., if EmpID is VT0001 and DOJ is 01-Jan-20, the password is {@code VT000101012020}).</p>
+     * 
+     * <h3>Error Handling:</h3>
+     * <p>Indices from the {@code rawData} array are extracted safely with fallback to "0" if missing or empty.
+     * Any failure in parsing the Date of Joining defaults to the original unparsed string for password generation,
+     * while logging the error. Exceptions during file I/O operations are caught, logged, and gracefully handled by returning {@code null}.</p>
+     * 
+     * @param rawData     An array of strings representing a single row from the parsed CSV. 
+     *                    Expected indices: [1] EmpID, [2] Name, [3] DOJ, [4-7] Fixed Salary parts, 
+     *                    [8] Leaves, [9-10] Days info, [11-14] Earned Salary parts, [15-18] Deductions, [19] Net Pay.
+     * @param outputDir   The absolute or relative directory path where the generated PDF should be saved. 
+     *                    If the directory does not exist, it will be created.
+     * @param monthString The formatted month/year string (e.g., "Jul-26") to display on the salary slip.
+     * @param filename    The desired filename for the generated output (e.g., "VT0001_Jul-26.pdf").
+     * @return The absolute path of the generated PDF file if successful; {@code null} if an exception occurs during generation.
      */
     public static String generateSalarySlip(String[] rawData, String outputDir, String monthString, String filename) {
+        // CHANGE MADE HERE: Added logline to indicate the start of PDF generation.
+        LogUtils.info("Starting PDF generation for filename: " + filename);
         File dir = new File(outputDir);
         if (!dir.exists()) dir.mkdirs();
 
@@ -88,7 +119,8 @@ public class PdfUtil {
             formattedDoj = date.format(outFormat);
         } catch (Exception e) {
             // fallback to original if parsing fails
-            System.err.println("Could not parse DOJ: " + doj);
+            // CHANGE MADE HERE: Replaced System.err.println with LogUtils.error
+            LogUtils.error("Could not parse DOJ: " + doj, e);
         }
         String pwd = empId + formattedDoj;
 
@@ -241,9 +273,12 @@ public class PdfUtil {
             document.add(footer);
 
             document.close();
+            // CHANGE MADE HERE: Added success logline before returning the destination path
+            LogUtils.info("PDF generated successfully at: " + destPath);
             return destPath;
         } catch (FileNotFoundException e) {
-            e.printStackTrace();
+            // CHANGE MADE HERE: Replaced e.printStackTrace() with LogUtils.error
+            LogUtils.error("Failed to generate PDF for filename: " + filename, e);
             return null;
         }
     }

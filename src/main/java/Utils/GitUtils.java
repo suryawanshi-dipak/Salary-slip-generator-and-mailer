@@ -41,6 +41,7 @@ public class GitUtils {
      * @param owner The main application frame (used for dialogs and disposal on update).
      */
     public static void startUpdateCheck(JFrame owner) {
+        LogUtils.info("Starting application. Current Build Version: " + CURRENT_VERSION);
         Thread t = new Thread(() -> {
             // 1. Apply a previously-downloaded update silently (no dialog)
             if (applyPendingUpdate(owner)) return;
@@ -64,6 +65,7 @@ public class GitUtils {
             String pendingVersion = Files.readString(verFile).trim();
             if (!isNewer(pendingVersion, CURRENT_VERSION)) return false;
 
+            LogUtils.info("Applying pending build update to version: " + pendingVersion);
             hotSwap(owner, jar); // silent — no confirmation dialog
             return true;
         } catch (Exception ignored) {
@@ -87,11 +89,15 @@ public class GitUtils {
         if (tagName == null) return;
 
         String latest = tagName.startsWith("v") ? tagName.substring(1) : tagName;
-        if (!isNewer(latest, CURRENT_VERSION)) return;
+        if (!isNewer(latest, CURRENT_VERSION)) {
+            LogUtils.info("Build is up-to-date. No new updates found.");
+            return;
+        }
 
         String downloadUrl = findJarDownloadUrl(body);
         if (downloadUrl == null) return;
 
+        LogUtils.info("New build update found: v" + latest + ". Prompting user.");
         SwingUtilities.invokeLater(() -> promptUpdate(owner, latest, downloadUrl));
     }
 
@@ -133,7 +139,7 @@ public class GitUtils {
 
                 // Persist version so the next startup auto-applies without a dialog
                 Files.writeString(UPDATE_DIR.resolve("version.txt"), version);
-
+                LogUtils.info("Build update v" + version + " downloaded successfully. Initiating hot-swap.");
                 hotSwap(owner, jar);
 
             } catch (IOException | ReflectiveOperationException ex) {

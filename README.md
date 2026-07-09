@@ -9,6 +9,7 @@ Salary Slip Generator is a Java-based desktop application designed for automated
 - **Automated Emailing**: Distributes the generated PDFs directly to employees via an integrated SMTP client.
 - **Desktop UI**: Features a Graphical User Interface built with Java Swing for ease of use.
 - **In-App Updater**: Includes Git-based utilities for in-app hot-swapping and updates.
+- **Integrated Logging**: Features centralized, formatted console logging for process tracking and robust error reporting.
 
 ## Tech Stack
 - **Frontend**: Java Swing (Desktop UI)
@@ -33,6 +34,7 @@ Salary-slip-generator-and-mailer/
 │           │   └── SalarySlipGenerator.java # Main application entry point & Swing UI
 │           └── Utils/      # Helper utilities
 │               ├── GitUtils.java            # Utilities for auto-updating via Git
+│               ├── LogUtils.java            # Utility for standardized console logging
 │               ├── MailUtil.java            # SMTP email dispatch logic
 │               └── PdfUtil.java             # PDF creation and formatting logic
 └── DATA/                   # Directory for storing input CSVs and generated PDFs
