@@ -64,11 +64,7 @@ public class GitUtils {
      *              update).
      */
     public static void startUpdateCheck(JFrame owner) {
-<<<<<<< Updated upstream
-        LogUtils.info("Starting application. Current Build Version: " + CURRENT_VERSION);
-=======
-        LogUtils.info("Initializing update check sequence. Current runtime version: " + CURRENT_VERSION);
->>>>>>> Stashed changes
+        LogUtils.info("Starting update check. Current build version: " + CURRENT_VERSION);
         Thread t = new Thread(() -> {
             LogUtils.info("Update engine background thread spawned successfully.");
             // 1. Apply a previously-downloaded update silently (no dialog)
@@ -109,12 +105,7 @@ public class GitUtils {
                 return false;
             }
 
-<<<<<<< Updated upstream
-            LogUtils.info("Applying pending build update to version: " + pendingVersion);
-=======
-            LogUtils.info("Executing silent cold-apply hot-swap for locally staged update package version ["
-                    + pendingVersion + "].");
->>>>>>> Stashed changes
+            LogUtils.info("Applying pending update to version: " + pendingVersion);
             hotSwap(owner, jar); // silent — no confirmation dialog
             return true;
         } catch (Exception e) {
@@ -148,15 +139,9 @@ public class GitUtils {
         }
 
         String latest = tagName.startsWith("v") ? tagName.substring(1) : tagName;
-<<<<<<< Updated upstream
+        LogUtils.info("Latest published release tag from GitHub: v" + latest);
         if (!isNewer(latest, CURRENT_VERSION)) {
-            LogUtils.info("Build is up-to-date. No new updates found.");
-=======
-        LogUtils.info("Remote server indicates latest published production artifact tag distribution is: v" + latest);
-        if (!isNewer(latest, CURRENT_VERSION)) {
-            LogUtils.info("Current system build version [" + CURRENT_VERSION
-                    + "] is up-to-date with remote distribution release version [" + latest + "].");
->>>>>>> Stashed changes
+            LogUtils.info("Current version [" + CURRENT_VERSION + "] is up-to-date with latest release [" + latest + "].");
             return;
         }
 
@@ -167,12 +152,7 @@ public class GitUtils {
             return;
         }
 
-<<<<<<< Updated upstream
-        LogUtils.info("New build update found: v" + latest + ". Prompting user.");
-=======
-        LogUtils.info("Dispatched prompt notification payload elements request to UI thread. Target update link: "
-                + downloadUrl);
->>>>>>> Stashed changes
+        LogUtils.info("New update found: v" + latest + ". Prompting user.");
         SwingUtilities.invokeLater(() -> promptUpdate(owner, latest, downloadUrl));
     }
 
@@ -229,13 +209,7 @@ public class GitUtils {
 
                 // Persist version so the next startup auto-applies without a dialog
                 Files.writeString(UPDATE_DIR.resolve("version.txt"), version);
-<<<<<<< Updated upstream
-                LogUtils.info("Build update v" + version + " downloaded successfully. Initiating hot-swap.");
-=======
-                LogUtils.info(
-                        "Saved update target descriptor metadata successfully. Proceeding to live frame dynamic class loader hot-swaps execution.");
-
->>>>>>> Stashed changes
+                LogUtils.info("Update v" + version + " downloaded successfully. Initiating hot-swap.");
                 hotSwap(owner, jar);
 
             } catch (IOException | ReflectiveOperationException ex) {

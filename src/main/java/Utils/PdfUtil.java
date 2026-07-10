@@ -25,11 +25,6 @@ import java.io.File;
 import java.io.FileNotFoundException;
 
 /**
-<<<<<<< Updated upstream
- * Utility class for generating Salary Slip PDFs.
- * This class uses the iText library to create a structured, password-protected PDF document.
- * The password is derived from the employee's ID and Date of Joining (DOJ).
-=======
  * ============================================================================
  * PROJECT UNDERSTANDING - PdfUtil
  * ============================================================================
@@ -45,7 +40,6 @@ import java.io.FileNotFoundException;
  *   (e.g., VT0001 + 01042019 = VT000101042019).
  * - Implements SLF4J logging which is controlled by CsvReaderService.isLoggingEnabled.
  * ============================================================================
->>>>>>> Stashed changes
  */
 public class PdfUtil {
 
@@ -161,12 +155,7 @@ public class PdfUtil {
             formattedDoj = date.format(outFormat);
         } catch (Exception e) {
             // fallback to original if parsing fails
-<<<<<<< Updated upstream
-            // CHANGE MADE HERE: Replaced System.err.println with LogUtils.error
-            LogUtils.error("Could not parse DOJ: " + doj, e);
-=======
             logWarn("Could not parse DOJ: {} for employee ID: {}", doj, empId);
->>>>>>> Stashed changes
         }
         String pwd = empId + formattedDoj;
 
@@ -319,19 +308,10 @@ public class PdfUtil {
             document.add(footer);
 
             document.close();
-<<<<<<< Updated upstream
-            // CHANGE MADE HERE: Added success logline before returning the destination path
-            LogUtils.info("PDF generated successfully at: " + destPath);
-            return destPath;
-        } catch (FileNotFoundException e) {
-            // CHANGE MADE HERE: Replaced e.printStackTrace() with LogUtils.error
-            LogUtils.error("Failed to generate PDF for filename: " + filename, e);
-=======
             logInfo("Successfully generated PDF salary slip for employee ID: {} at {}", empId, destPath);
             return destPath;
         } catch (FileNotFoundException e) {
             logError("Failed to generate PDF salary slip for employee ID: {} - File not found: {}", empId, e.getMessage(), e);
->>>>>>> Stashed changes
             return null;
         }
     }
