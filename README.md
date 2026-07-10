@@ -13,7 +13,7 @@ Salary Slip Generator is a Java-based desktop application designed for automated
 
 ## Tech Stack
 - **Frontend**: Java Swing (Desktop UI)
-- **Backend**: Java 21
+- **Backend**: Java 25
 - **Database**: None (Uses CSV for data storage/input)
 - **Third-Party Libraries**:
   - iText 7 Core (v7.2.5) for PDF generation
@@ -42,7 +42,7 @@ Salary-slip-generator-and-mailer/
 
 ## Prerequisites & Installation
 ```bash
-# Ensure Java 21 and Maven are installed on your system
+# Ensure Java 25 and Maven are installed on your system
 java -version
 mvn -version
 
