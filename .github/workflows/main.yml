@@ -88,6 +88,7 @@ jobs:
             --main-jar SalarySlipGenerator.jar \
             --main-class UI.SalarySlipGenerator \
             --app-content package-data/DATA \
+            --icon DATA/app-icon.ico \
             --dest dist \
             --win-menu \
             --win-shortcut \
