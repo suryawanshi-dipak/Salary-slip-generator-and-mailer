@@ -16,8 +16,7 @@ import java.util.HashSet;
 import java.util.Properties;
 import java.util.Set;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
 
 import jakarta.mail.AuthenticationFailedException;
 import jakarta.mail.Authenticator;
@@ -52,26 +51,6 @@ import jakarta.mail.internet.MimeMultipart;
  */
 public class MailUtil {
 
-    private static final Logger logger = LoggerFactory.getLogger(MailUtil.class);
-
-    private static void logInfo(String format, Object... arguments) {
-        if (Services.CsvReaderService.isLoggingEnabled) {
-            logger.info(format, arguments);
-        }
-    }
-
-    private static void logWarn(String format, Object... arguments) {
-        if (Services.CsvReaderService.isLoggingEnabled) {
-            logger.warn(format, arguments);
-        }
-    }
-
-    private static void logError(String format, Object... arguments) {
-        if (Services.CsvReaderService.isLoggingEnabled) {
-            logger.error(format, arguments);
-        }
-    }
-
     private static final String CONFIG_FILE = "DATA/smtp.properties";
     private static final String LEDGER_FILE = "DATA/sent_ledger.csv";
 
@@ -84,7 +63,7 @@ public class MailUtil {
         try (FileInputStream in = new FileInputStream(CONFIG_FILE)) {
             smtpProps.load(in);
         } catch (IOException e) {
-            logWarn("Could not load config file {}: {}", CONFIG_FILE, e.getMessage());
+            Utils.LogUtils.warn("Could not load config file {}: {}", CONFIG_FILE, e.getMessage());
         }
 
         // Load ledger
@@ -97,7 +76,7 @@ public class MailUtil {
                     }
                 }
             } catch (IOException e) {
-                logError("Error reading sent ledger: {}", e.getMessage());
+                Utils.LogUtils.error("Error reading sent ledger: {}", e.getMessage());
             }
         }
     }
@@ -179,7 +158,7 @@ public class MailUtil {
                     PrintWriter out = new PrintWriter(bw)) {
                 out.println(key);
             } catch (IOException e) {
-                logError("Error writing to sent ledger: {}", e.getMessage());
+                Utils.LogUtils.error("Error writing to sent ledger: {}", e.getMessage());
             }
         }
     }
@@ -214,7 +193,7 @@ public class MailUtil {
             out.println(logEntry);
 
         } catch (IOException e) {
-            logError("Failed to write to run log: {}", e.getMessage());
+            Utils.LogUtils.error("Failed to write to run log: {}", e.getMessage());
         }
     }
 
@@ -235,17 +214,17 @@ public class MailUtil {
      */
     public static boolean sendAndTrackSlip(String empId, String month, String email, String name, String doj,
             String pdfPath, String smtpPassword) {
-        logInfo("Starting email dispatch process for Employee: {}, Month: {}, Email: {}", empId, month, email);
+        Utils.LogUtils.info("Starting email dispatch process for Employee: {}, Month: {}, Email: {}", empId, month, email);
 
         if (email == null || email.isEmpty() || !email.contains("@")) {
-            logWarn("Failed to send email to Employee {}: Invalid email address ({})", empId, email);
+            Utils.LogUtils.warn("Failed to send email to Employee {}: Invalid email address ({})", empId, email);
             logRun(month, empId, "Failed", "Invalid email address");
             return false;
         }
 
         File f = new File(pdfPath);
         if (!f.exists()) {
-            logError("Failed to send email to Employee {}: PDF file not found at {}", empId, pdfPath);
+            Utils.LogUtils.error("Failed to send email to Employee {}: PDF file not found at {}", empId, pdfPath);
             logRun(month, empId, "Failed", "PDF file not found");
             return false;
         }
@@ -258,7 +237,7 @@ public class MailUtil {
             java.time.LocalDate date = java.time.LocalDate.parse(doj, inFormat);
             formattedDoj = date.format(outFormat);
         } catch (Exception ex) {
-            logWarn("Could not parse DOJ for email password check: {} for employee ID: {}", doj, empId);
+            Utils.LogUtils.warn("Could not parse DOJ for email password check: {} for employee ID: {}", doj, empId);
         }
 
         String subject = "Salary Slip for " + month;
@@ -321,14 +300,14 @@ public class MailUtil {
                 break;
 
             } catch (AuthenticationFailedException e) {
-                logError("Failed to send email to Employee {} due to SMTP Authentication failure", empId, e);
+                Utils.LogUtils.error("Failed to send email to Employee {} due to SMTP Authentication failure", empId, e);
                 logRun(month, empId, "Failed", "SMTP Authentication failed");
                 return false;
             } catch (Exception e) {
                 attempts++;
-                logWarn("Attempt {} failed to send email to Employee {}: {}", attempts, empId, e.getMessage());
+                Utils.LogUtils.warn("Attempt {} failed to send email to Employee {}: {}", attempts, empId, e.getMessage());
                 if (attempts >= maxAttempts) {
-                    logError("Max retry attempts reached. Failed to send email to Employee {}: {}", empId, e.getMessage(), e);
+                    Utils.LogUtils.error("Max retry attempts reached. Failed to send email to Employee {}: {}", empId, e.getMessage(), e);
                     logRun(month, empId, "Failed", "SMTP Error: " + e.getMessage());
                     return false;
                 }
@@ -341,7 +320,7 @@ public class MailUtil {
 
         if (success) {
             markAsSent(empId, month);
-            logInfo("Successfully sent email with attachment to: {}", email);
+            Utils.LogUtils.info("Successfully sent email with attachment to: {}", email);
             logRun(month, empId, "Sent", null);
         }
 

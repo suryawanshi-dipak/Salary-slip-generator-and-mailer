@@ -18,8 +18,6 @@ import com.itextpdf.layout.element.Table;
 import com.itextpdf.layout.properties.TextAlignment;
 import com.itextpdf.layout.properties.UnitValue;
 import com.itextpdf.layout.properties.VerticalAlignment;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -42,26 +40,6 @@ import java.io.FileNotFoundException;
  * ============================================================================
  */
 public class PdfUtil {
-
-    private static final Logger logger = LoggerFactory.getLogger(PdfUtil.class);
-
-    private static void logInfo(String format, Object... arguments) {
-        if (Services.CsvReaderService.isLoggingEnabled) {
-            logger.info(format, arguments);
-        }
-    }
-
-    private static void logWarn(String format, Object... arguments) {
-        if (Services.CsvReaderService.isLoggingEnabled) {
-            logger.warn(format, arguments);
-        }
-    }
-
-    private static void logError(String format, Object... arguments) {
-        if (Services.CsvReaderService.isLoggingEnabled) {
-            logger.error(format, arguments);
-        }
-    }
 
     // Define colors used in the layout
     private static final DeviceRgb BLUE_TEXT = new DeviceRgb(0, 51, 153);
@@ -113,7 +91,7 @@ public class PdfUtil {
         String name = safe(rawData, 2);
         String doj = safe(rawData, 3);
         
-        logInfo("Generating PDF salary slip for employee ID: {}, month: {}", empId, monthString);
+        Utils.LogUtils.info("Generating PDF salary slip for employee ID: {}, month: {}", empId, monthString);
         
         // Month and Static details (since not in CSV explicitly formatted)
         String month = monthString != null ? monthString : "Unknown"; 
@@ -155,7 +133,7 @@ public class PdfUtil {
             formattedDoj = date.format(outFormat);
         } catch (Exception e) {
             // fallback to original if parsing fails
-            logWarn("Could not parse DOJ: {} for employee ID: {}", doj, empId);
+            Utils.LogUtils.warn("Could not parse DOJ: {} for employee ID: {}", doj, empId);
         }
         String pwd = empId + formattedDoj;
 
@@ -308,10 +286,10 @@ public class PdfUtil {
             document.add(footer);
 
             document.close();
-            logInfo("Successfully generated PDF salary slip for employee ID: {} at {}", empId, destPath);
+            Utils.LogUtils.info("Successfully generated PDF salary slip for employee ID: {} at {}", empId, destPath);
             return destPath;
         } catch (FileNotFoundException e) {
-            logError("Failed to generate PDF salary slip for employee ID: {} - File not found: {}", empId, e.getMessage(), e);
+            Utils.LogUtils.error("Failed to generate PDF salary slip for employee ID: {} - File not found: {}", empId, e.getMessage(), e);
             return null;
         }
     }

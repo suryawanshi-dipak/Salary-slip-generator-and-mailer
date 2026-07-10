@@ -176,7 +176,7 @@ public class SalarySlipGenerator extends JFrame {
                 setIconImage(new ImageIcon(logoFile.getAbsolutePath()).getImage());
             }
         } catch (Exception e) {
-            System.err.println("Could not load application logo: " + e.getMessage());
+            Utils.LogUtils.error("Could not load application logo: {}", e.getMessage(), e);
         }
 
         // Root panel holding everything
@@ -1333,32 +1333,31 @@ public class SalarySlipGenerator extends JFrame {
      * frame.
      */
     public static void main(String[] args) {
-        System.out.println("LOG: Main method entered");
+        Utils.LogUtils.info("LOG: Main method entered");
         try {
             // Attempt to use system-native styles for UI elements like scrollbars
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-            System.out.println("LOG: Look and Feel set successfully");
+            Utils.LogUtils.info("LOG: Look and Feel set successfully");
         } catch (Exception e) {
-            System.out.println("LOG: Look and Feel setting failed: " + e.getMessage());
+            Utils.LogUtils.error("LOG: Look and Feel setting failed: {}", e.getMessage(), e);
             // Fallback to cross-platform L&F if system style fails
         }
 
         SwingUtilities.invokeLater(() -> {
             try {
-                System.out.println("LOG: Initializing SalarySlipGenerator frame");
+                Utils.LogUtils.info("LOG: Initializing SalarySlipGenerator frame");
                 SalarySlipGenerator frame = new SalarySlipGenerator();
-                System.out.println("LOG: Frame initialized, setting row sorter");
+                Utils.LogUtils.info("LOG: Frame initialized, setting row sorter");
                 // Attach a sorter to our table model so column headers can be clicked to sort
                 // rows
                 frame.table.setRowSorter(new TableRowSorter<>(frame.model));
-                System.out.println("LOG: Sorter set, setting frame visible");
+                Utils.LogUtils.info("LOG: Sorter set, setting frame visible");
                 frame.setVisible(true); // Launch!
-                System.out.println("LOG: Frame set visible, starting update check");
+                Utils.LogUtils.info("LOG: Frame set visible, starting update check");
                 Utils.GitUtils.startUpdateCheck(frame);
-                System.out.println("LOG: Update check started");
+                Utils.LogUtils.info("LOG: Update check started");
             } catch (Throwable t) {
-                System.err.println("LOG ERROR: Failed to launch UI!");
-                t.printStackTrace();
+                Utils.LogUtils.error("LOG ERROR: Failed to launch UI!", t);
             }
         });
     }

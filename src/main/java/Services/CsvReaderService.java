@@ -5,8 +5,7 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
 
 /**
  * ============================================================================
@@ -26,29 +25,8 @@ import org.slf4j.LoggerFactory;
  */
 public class CsvReaderService {
 
-    // Initialize the standard SLF4J logger for this class
-    private static final Logger logger = LoggerFactory.getLogger(CsvReaderService.class);
-
     // Global toggle for enabling/disabling CSV parsing logs from the UI
     public static boolean isLoggingEnabled = true;
-
-    private static void logInfo(String format, Object... arguments) {
-        if (isLoggingEnabled) {
-            logger.info(format, arguments);
-        }
-    }
-
-    private static void logWarn(String format, Object... arguments) {
-        if (isLoggingEnabled) {
-            logger.warn(format, arguments);
-        }
-    }
-
-    private static void logError(String format, Object... arguments) {
-        if (isLoggingEnabled) {
-            logger.error(format, arguments);
-        }
-    }
 
     /**
      * Wrapper class to hold both the parsed table data and any validation errors
@@ -78,7 +56,7 @@ public class CsvReaderService {
      */
     public static CsvParseResult parsePayrollCsv(String filePath) throws IOException {
         // INFO level: Routine operational tracking
-        logInfo("Starting CSV parsing for file: {}", filePath);
+        Utils.LogUtils.info("Starting CSV parsing for file: {}", filePath);
 
         List<Object[]> rows = new ArrayList<>();
         List<String[]> rawRows = new ArrayList<>();
@@ -114,32 +92,32 @@ public class CsvReaderService {
                 if (empId.isEmpty()) {
                     String err = "Row " + rowNum + ": Missing or blank Employee ID.";
                     errors.add(err);
-                    logWarn("CSV Parse Warning - {}", err);
+                    Utils.LogUtils.warn("CSV Parse Warning - {}", err);
                     empId = "Unknown";
                 }
                 if (name.isEmpty()) {
                     String err = "Row " + rowNum + ": Missing or blank Employee Name.";
                     errors.add(err);
-                    logWarn("CSV Parse Warning - {}", err);
+                    Utils.LogUtils.warn("CSV Parse Warning - {}", err);
                     name = "Unknown";
                 }
                 if (rawBasic.isEmpty()) {
                     String err = "Row " + rowNum + ": Missing Basic Salary.";
                     errors.add(err);
-                    logWarn("CSV Parse Warning - {}", err);
+                    Utils.LogUtils.warn("CSV Parse Warning - {}", err);
                     rawBasic = "0";
                 }
                 if (rawNet.isEmpty()) {
                     String err = "Row " + rowNum + ": Missing Net Salary.";
                     errors.add(err);
-                    logWarn("CSV Parse Warning - {}", err);
+                    Utils.LogUtils.warn("CSV Parse Warning - {}", err);
                     rawNet = "0";
                 }
                 if (email.isEmpty() || !email.contains("@")) {
                     String err = "Row " + rowNum + ": Missing or invalid Email for " + name
                             + " (Will be flagged as unsendable).";
                     errors.add(err);
-                    logWarn("CSV Parse Warning - {}", err);
+                    Utils.LogUtils.warn("CSV Parse Warning - {}", err);
                 }
 
                 String basicSalary = "\u20B9" + rawBasic;
@@ -165,12 +143,12 @@ public class CsvReaderService {
 
                 rows.add(rowData);
             }
-            logInfo("Finished parsing CSV file: {}. Loaded {} rows successfully. Validation errors found: {}",
+            Utils.LogUtils.info("Finished parsing CSV file: {}. Loaded {} rows successfully. Validation errors found: {}",
                     filePath, rows.size(), errors.size());
 
         } catch (IOException e) {
             // ERROR level: Fatal system failures or file loading blockages
-            logError("Error reading CSV file {}: {}", filePath, e.getMessage(), e);
+            Utils.LogUtils.error("Error reading CSV file {}: {}", filePath, e.getMessage(), e);
             throw e;
         }
 
