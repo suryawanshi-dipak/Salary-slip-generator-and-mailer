@@ -18,16 +18,56 @@ import com.itextpdf.layout.element.Table;
 import com.itextpdf.layout.properties.TextAlignment;
 import com.itextpdf.layout.properties.UnitValue;
 import com.itextpdf.layout.properties.VerticalAlignment;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileNotFoundException;
 
 /**
+<<<<<<< Updated upstream
  * Utility class for generating Salary Slip PDFs.
  * This class uses the iText library to create a structured, password-protected PDF document.
  * The password is derived from the employee's ID and Date of Joining (DOJ).
+=======
+ * ============================================================================
+ * PROJECT UNDERSTANDING - PdfUtil
+ * ============================================================================
+ * ROLE:
+ * This utility handles PDF compilation and formatting for employee salary slips.
+ * It reads raw CSV row structures, parses values into fields, constructs tables,
+ * paints headers/totals, and outputs encrypted PDF documents to disk.
+ *
+ * HOW IT WORKS:
+ * - Uses iText 7 to dynamically draw cells, custom borders, alignment, and styling.
+ * - Password Protection: Derives owner/user document passwords using the employee ID
+ *   concatenated with their parsed Date of Joining (DOJ) formatted as "ddMMyyyy"
+ *   (e.g., VT0001 + 01042019 = VT000101042019).
+ * - Implements SLF4J logging which is controlled by CsvReaderService.isLoggingEnabled.
+ * ============================================================================
+>>>>>>> Stashed changes
  */
 public class PdfUtil {
+
+    private static final Logger logger = LoggerFactory.getLogger(PdfUtil.class);
+
+    private static void logInfo(String format, Object... arguments) {
+        if (Services.CsvReaderService.isLoggingEnabled) {
+            logger.info(format, arguments);
+        }
+    }
+
+    private static void logWarn(String format, Object... arguments) {
+        if (Services.CsvReaderService.isLoggingEnabled) {
+            logger.warn(format, arguments);
+        }
+    }
+
+    private static void logError(String format, Object... arguments) {
+        if (Services.CsvReaderService.isLoggingEnabled) {
+            logger.error(format, arguments);
+        }
+    }
 
     // Define colors used in the layout
     private static final DeviceRgb BLUE_TEXT = new DeviceRgb(0, 51, 153);
@@ -79,6 +119,8 @@ public class PdfUtil {
         String name = safe(rawData, 2);
         String doj = safe(rawData, 3);
         
+        logInfo("Generating PDF salary slip for employee ID: {}, month: {}", empId, monthString);
+        
         // Month and Static details (since not in CSV explicitly formatted)
         String month = monthString != null ? monthString : "Unknown"; 
         String designation = "Jr. Software Developer";
@@ -119,8 +161,12 @@ public class PdfUtil {
             formattedDoj = date.format(outFormat);
         } catch (Exception e) {
             // fallback to original if parsing fails
+<<<<<<< Updated upstream
             // CHANGE MADE HERE: Replaced System.err.println with LogUtils.error
             LogUtils.error("Could not parse DOJ: " + doj, e);
+=======
+            logWarn("Could not parse DOJ: {} for employee ID: {}", doj, empId);
+>>>>>>> Stashed changes
         }
         String pwd = empId + formattedDoj;
 
@@ -273,12 +319,19 @@ public class PdfUtil {
             document.add(footer);
 
             document.close();
+<<<<<<< Updated upstream
             // CHANGE MADE HERE: Added success logline before returning the destination path
             LogUtils.info("PDF generated successfully at: " + destPath);
             return destPath;
         } catch (FileNotFoundException e) {
             // CHANGE MADE HERE: Replaced e.printStackTrace() with LogUtils.error
             LogUtils.error("Failed to generate PDF for filename: " + filename, e);
+=======
+            logInfo("Successfully generated PDF salary slip for employee ID: {} at {}", empId, destPath);
+            return destPath;
+        } catch (FileNotFoundException e) {
+            logError("Failed to generate PDF salary slip for employee ID: {} - File not found: {}", empId, e.getMessage(), e);
+>>>>>>> Stashed changes
             return null;
         }
     }

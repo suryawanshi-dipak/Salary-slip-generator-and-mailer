@@ -4,35 +4,35 @@ import javax.swing.*;
 import javax.swing.table.*;
 import java.awt.*;
 import java.awt.event.*;
-import java.awt.geom.*;
 
 /**
- * Main application class for the Salary Slip Generator.
- * This class builds the entire UI using Java Swing and custom drawn panels.
- * 
  * ============================================================================
- * COMPONENT & METHOD DOCUMENTATION
+ * PROJECT UNDERSTANDING - SalarySlipGenerator
  * ============================================================================
+ * ROLE:
+ * This is the main orchestration and GUI class for the desktop application.
+ * It is built using Java Swing and custom-drawn graphical components.
  * 
- * 1. UI Components Overview:
- *    - GradientPanel: Custom JPanel used for the top header to draw a smooth gradient background.
- *    - ShadowPanel: Custom JPanel used for dashboard cards and the main table container. 
- *                   It paints a rounded rectangle background with a subtle drop shadow.
- *    - Header: The top navigation bar containing the application title and main action buttons.
- *    - Dashboard: The horizontal row of 4 statistics cards showing summary metrics.
- *    - Table Card: The main white container holding the search bar, month filter, and employee table.
+ * CORE WORKFLOWS:
+ * 1. CSV Upload: Invokes CsvReaderService to parse raw data and display
+ * employee list.
+ * 2. PDF Generation: Passes raw rows to PdfUtil to output password-secured PDF
+ * slips.
+ * 3. Email Dispatch: Leverages MailUtil to securely email attachments to
+ * employees.
+ * 4. Logs Management: Has a Log Toggle Button to dynamically enable/disable
+ * SLF4J logs
+ * across all utility packages, and a View Log Button to inspect log files
+ * in-app.
+ * 5. Auto Update: Launches GitUtils update checker thread to query GitHub
+ * releases and
+ * silently hot-swap the runtime classloader.
  * 
- * 2. Core Methods:
- *    - SalarySlipGenerator(): Constructor. Sets up the main JFrame window, colors, and orchestrates the layout.
- *    - buildHeader(): Assembles the top gradient header (Title, Upload Button, Generate Button).
- *    - buildDashboard(): Assembles the KPI statistic cards (Total Employees, Generated, Pending, Mails Sent).
- *    - buildBody(): Combines the dashboard and the table card into the central layout region.
- *    - buildTableCard(): Constructs the data table, configures its custom renderers, and adds the search filters.
- *    - filterTable(): Applies row filtering to the table based on the search query input and month dropdown.
- *    - makeHeaderButton(): Helper method to create styled, interactive buttons for the header.
- *    - makeCard(): Helper method to create individual statistic cards with icons and labels.
- *    - createFontIcon(): Helper method that generates a perfectly centered Swing Icon from a font character.
- *    - createIconButton(): Helper method to draw custom shapes (like eye or paper plane) inside table action buttons.
+ * COMPONENT OVERVIEW:
+ * - GradientPanel: Custom header background drawing a modern gradient.
+ * - ShadowPanel: Card-based dashboard layouts drawing dropshadows.
+ * - Table Sorter: Custom JTable model filtering by search field and month
+ * dropdown.
  * ============================================================================
  */
 public class SalarySlipGenerator extends JFrame {
@@ -43,11 +43,11 @@ public class SalarySlipGenerator extends JFrame {
     private static final Color PRIMARY_PURPLE = new Color(107, 76, 255);
     private static final Color BG = new Color(237, 244, 255); // Background color
     private static final Color WHITE = Color.WHITE;
-    
+
     // Text colors
     private static final Color TEXT_HEADING = new Color(23, 52, 99);
     private static final Color TEXT_MUTED = new Color(119, 119, 119);
-    
+
     // Status and action colors
     private static final Color GREEN = new Color(22, 163, 74);
     private static final Color GREEN_LIGHT = new Color(220, 252, 231);
@@ -55,11 +55,11 @@ public class SalarySlipGenerator extends JFrame {
     private static final Color RED = new Color(220, 38, 38);
     private static final Color BLUE_MID = new Color(37, 99, 235);
     private static final Color UPLOAD_GREEN = new Color(24, 184, 111);
-    
+
     // Table styling colors
     private static final Color TABLE_HEADER_BG = new Color(24, 59, 117);
     private static final Color ROW_HOVER = new Color(245, 249, 255);
-    
+
     /* ===================== FONTS ===================== */
     private static final Font FONT = new Font("Segoe UI", Font.PLAIN, 14);
     private static final Font FONT_BOLD = new Font("Segoe UI", Font.BOLD, 14);
@@ -71,7 +71,7 @@ public class SalarySlipGenerator extends JFrame {
     private static final Font FONT_FOOTER = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font FONT_TITLE = new Font("Segoe UI", Font.BOLD, 24);
     private static final Font FONT_LOGO = new Font("Segoe UI", Font.PLAIN, 13);
-    
+
     // Constants for custom UI drawing
     private static final int ARC = 18; // Border radius for panels
     private static final int SHADOW_OFFSET = 8; // Drop shadow offset
@@ -79,7 +79,7 @@ public class SalarySlipGenerator extends JFrame {
     /* ===================== DATA ===================== */
     // Initial static mock data for the employees table
     private Object[][] data = {};
-    
+
     // Column headers for the table
     private String[] cols = { "Emp ID", "Employee Name", "Department",
             "Basic Salary", "Net Salary", "Month",
@@ -88,22 +88,29 @@ public class SalarySlipGenerator extends JFrame {
     // --------------------------------------------------------
     // Core UI Components
     // --------------------------------------------------------
-    
+
     /** The underlying data model supporting the main employees JTable */
     private DefaultTableModel model;
-    
+
     /** The main UI table displaying the employee salary records */
     private JTable table;
-    
+
     /** Text field used to dynamically filter the table by employee name or ID */
     private JTextField searchField;
-    
+
     /** Dropdown combo box to filter the table by payroll month */
     private JComboBox<String> monthCombo;
+<<<<<<< Updated upstream
     
     /** In-memory storage for SMTP password, pre-loaded from smtp.properties */
     private String smtpPassword = Utils.MailUtil.getSmtpPass();
     
+=======
+
+    /** In-memory storage for SMTP password */
+    private String smtpPassword = null;
+
+>>>>>>> Stashed changes
     // Dashboard stat labels
     private JLabel totalCountLbl;
     private JLabel generatedCountLbl;
@@ -136,7 +143,7 @@ public class SalarySlipGenerator extends JFrame {
         JPanel root = new JPanel(new BorderLayout(0, 12));
         root.setBackground(BG);
         root.setBorder(BorderFactory.createEmptyBorder(12, 20, 12, 20));
-        
+
         // Add sections to the root layout
         root.add(buildHeader(), BorderLayout.NORTH);
         root.add(buildBody(), BorderLayout.CENTER);
@@ -178,7 +185,9 @@ public class SalarySlipGenerator extends JFrame {
         // -- Right: Action buttons --
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 14, 0));
         right.setOpaque(false);
-        
+
+
+
         // Upload Excel Button
         right.add(makeHeaderButton("\uE898", "Upload Excel", UPLOAD_GREEN, WHITE,
                 e -> {
@@ -187,18 +196,19 @@ public class SalarySlipGenerator extends JFrame {
                     int res = chooser.showOpenDialog(this);
                     if (res == JFileChooser.APPROVE_OPTION) {
                         try {
-                            Services.CsvReaderService.CsvParseResult result = Services.CsvReaderService.parsePayrollCsv(chooser.getSelectedFile().getAbsolutePath());
-                            
+                            Services.CsvReaderService.CsvParseResult result = Services.CsvReaderService
+                                    .parsePayrollCsv(chooser.getSelectedFile().getAbsolutePath());
+
                             // Store the raw data for PDF Generation
                             currentRawCsvData = result.rawRows;
-                            
+
                             // Clear existing table data and inject parsed CSV rows
                             model.setRowCount(0);
                             for (Object[] row : result.rows) {
                                 model.addRow(row);
                             }
                             updateDashboardStats();
-                            
+
                             // Check if validation found any errors (e.g. missing IDs, missing names)
                             if (!result.errors.isEmpty()) {
                                 // Display error report dialog
@@ -207,37 +217,44 @@ public class SalarySlipGenerator extends JFrame {
                                 textArea.setEditable(false);
                                 textArea.setFont(new Font("Monospaced", Font.PLAIN, 13));
                                 JScrollPane scrollPane = new JScrollPane(textArea);
-                                
-                                JOptionPane.showMessageDialog(this, scrollPane, "CSV Validation Report - Issues Found", JOptionPane.WARNING_MESSAGE);
+
+                                JOptionPane.showMessageDialog(this, scrollPane, "CSV Validation Report - Issues Found",
+                                        JOptionPane.WARNING_MESSAGE);
                             } else {
-                                JOptionPane.showMessageDialog(this, "Data loaded successfully from CSV! No errors found.", "Success", JOptionPane.INFORMATION_MESSAGE);
+                                JOptionPane.showMessageDialog(this,
+                                        "Data loaded successfully from CSV! No errors found.", "Success",
+                                        JOptionPane.INFORMATION_MESSAGE);
                             }
                         } catch (Exception ex) {
-                            JOptionPane.showMessageDialog(this, "Error reading file: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                            JOptionPane.showMessageDialog(this, "Error reading file: " + ex.getMessage(), "Error",
+                                    JOptionPane.ERROR_MESSAGE);
                         }
                     }
                 }));
-                        
+
         // Generate Slips Button
         right.add(makeHeaderButton("\uE74C", "Generate Slips", PRIMARY_PURPLE, WHITE,
                 e -> {
                     if (currentRawCsvData == null || currentRawCsvData.isEmpty()) {
-                        JOptionPane.showMessageDialog(this, "No data uploaded! Please upload a CSV first.", "Warning", JOptionPane.WARNING_MESSAGE);
+                        JOptionPane.showMessageDialog(this, "No data uploaded! Please upload a CSV first.", "Warning",
+                                JOptionPane.WARNING_MESSAGE);
                         return;
                     }
-                    
+
                     String formattedMonth = getFormattedMonth();
-                    String outputDir = System.getProperty("user.home") + java.io.File.separator + "SalarySlips" + java.io.File.separator + formattedMonth;
+                    String outputDir = System.getProperty("user.home") + java.io.File.separator + "SalarySlips"
+                            + java.io.File.separator + formattedMonth;
                     int successCount = 0;
-                    
+
                     for (int i = 0; i < currentRawCsvData.size(); i++) {
                         String[] rawRow = currentRawCsvData.get(i);
                         // Skip empty rows or rows without an ID
-                        if (rawRow.length <= 1 || rawRow[1].trim().isEmpty()) continue;
-                        
+                        if (rawRow.length <= 1 || rawRow[1].trim().isEmpty())
+                            continue;
+
                         String empId = rawRow[1].trim();
                         String filename = empId + "_" + formattedMonth + ".pdf";
-                        
+
                         String path = Utils.PdfUtil.generateSalarySlip(rawRow, outputDir, formattedMonth, filename);
                         if (path != null) {
                             successCount++;
@@ -247,10 +264,10 @@ public class SalarySlipGenerator extends JFrame {
                         }
                     }
                     updateDashboardStats();
-                    
-                    JOptionPane.showMessageDialog(this, 
-                        "Successfully generated " + successCount + " salary slips!\nSaved to: " + outputDir,
-                        "Generation Complete", JOptionPane.INFORMATION_MESSAGE);
+
+                    JOptionPane.showMessageDialog(this,
+                            "Successfully generated " + successCount + " salary slips!\nSaved to: " + outputDir,
+                            "Generation Complete", JOptionPane.INFORMATION_MESSAGE);
                 }));
 
         header.add(left, BorderLayout.WEST);
@@ -259,9 +276,127 @@ public class SalarySlipGenerator extends JFrame {
     }
 
     /**
+     * Opens a stylized scrollable dialog showing run logs from the 'Logs/'
+     * directory.
+     * Includes options to switch between different log files, refresh contents,
+     * and open logs in the system editor.
+     */
+    private void showLogDialog() {
+        JDialog dialog = new JDialog(this, "Application Run Logs", true);
+        dialog.setSize(650, 480);
+        dialog.setLocationRelativeTo(this);
+        dialog.setLayout(new BorderLayout(10, 10));
+        dialog.getContentPane().setBackground(BG);
+
+        // Top Panel for selecting log files
+        JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
+        topPanel.setOpaque(false);
+
+        JLabel selectLbl = new JLabel("Select Log File:");
+        selectLbl.setFont(FONT_BOLD);
+        selectLbl.setForeground(TEXT_HEADING);
+        topPanel.add(selectLbl);
+
+        JComboBox<String> logFilesCombo = new JComboBox<>();
+        logFilesCombo.setFont(FONT);
+        topPanel.add(logFilesCombo);
+
+        // Find available log files
+        java.io.File logDir = new java.io.File("Logs");
+        if (logDir.exists() && logDir.isDirectory()) {
+            java.io.File[] files = logDir.listFiles((dir, name) -> name.endsWith(".log"));
+            if (files != null) {
+                for (java.io.File file : files) {
+                    logFilesCombo.addItem(file.getName());
+                }
+            }
+        }
+
+        // Text area for log content
+        JTextArea logTextArea = new JTextArea();
+        logTextArea.setEditable(false);
+        logTextArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        logTextArea.setBackground(WHITE);
+        logTextArea.setForeground(new Color(33, 37, 41));
+        logTextArea.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        JScrollPane scrollPane = new JScrollPane(logTextArea);
+        scrollPane.setBorder(BorderFactory.createLineBorder(new Color(218, 224, 233)));
+
+        // Helper to load log content
+        Runnable loadLogContent = () -> {
+            String selectedFile = (String) logFilesCombo.getSelectedItem();
+            if (selectedFile == null) {
+                logTextArea.setText("No log files available in 'Logs/' directory.");
+                return;
+            }
+            java.io.File file = new java.io.File(logDir, selectedFile);
+            if (!file.exists()) {
+                logTextArea.setText("File not found: " + file.getAbsolutePath());
+                return;
+            }
+            try {
+                byte[] bytes = java.nio.file.Files.readAllBytes(file.toPath());
+                logTextArea.setText(new String(bytes, java.nio.charset.StandardCharsets.UTF_8));
+                logTextArea.setCaretPosition(logTextArea.getText().length()); // Scroll to end
+            } catch (Exception ex) {
+                logTextArea.setText("Failed to load log file: " + ex.getMessage());
+            }
+        };
+
+        // Trigger load when changing selected log file
+        logFilesCombo.addActionListener(evt -> loadLogContent.run());
+
+        // Initial load
+        loadLogContent.run();
+
+        // Bottom action buttons panel
+        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        bottomPanel.setOpaque(false);
+
+        JButton refreshBtn = new JButton("Refresh");
+        refreshBtn.setFont(FONT_BOLD);
+        refreshBtn.addActionListener(evt -> loadLogContent.run());
+        bottomPanel.add(refreshBtn);
+
+        JButton openBtn = new JButton("Open in Editor");
+        openBtn.setFont(FONT_BOLD);
+        openBtn.addActionListener(evt -> {
+            String selectedFile = (String) logFilesCombo.getSelectedItem();
+            if (selectedFile != null) {
+                try {
+                    java.awt.Desktop.getDesktop().open(new java.io.File(logDir, selectedFile));
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(dialog, "Could not open file: " + ex.getMessage(), "Error",
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        });
+        bottomPanel.add(openBtn);
+
+        JButton closeBtn = new JButton("Close");
+        closeBtn.setFont(FONT_BOLD);
+        closeBtn.addActionListener(evt -> dialog.dispose());
+        bottomPanel.add(closeBtn);
+
+        // Layout assembly
+        JPanel centerPanel = new JPanel(new BorderLayout());
+        centerPanel.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10));
+        centerPanel.setOpaque(false);
+        centerPanel.add(scrollPane, BorderLayout.CENTER);
+
+        dialog.add(topPanel, BorderLayout.NORTH);
+        dialog.add(centerPanel, BorderLayout.CENTER);
+        dialog.add(bottomPanel, BorderLayout.SOUTH);
+
+        dialog.setVisible(true);
+    }
+
+    /**
      * Helper method to create styled header buttons with an embedded icon.
      * 
-     * @param iconCode The Unicode character for the font-based icon (e.g., "\uE898").
+     * @param iconCode The Unicode character for the font-based icon (e.g.,
+     *                 "\uE898").
      * @param text     The text to display on the button.
      * @param bg       The background color of the button.
      * @param fg       The text and icon foreground color.
@@ -283,30 +418,74 @@ public class SalarySlipGenerator extends JFrame {
         btn.setPreferredSize(new Dimension(160, 42));
         btn.setBorder(BorderFactory.createEmptyBorder(0, 16, 0, 16));
         btn.addActionListener(l);
-        
+
         // Hover effects
         btn.addMouseListener(new MouseAdapter() {
-            public void mouseEntered(MouseEvent e) { btn.setBackground(bg.brighter()); }
-            public void mouseExited(MouseEvent e) { btn.setBackground(bg); }
+            public void mouseEntered(MouseEvent e) {
+                btn.setBackground(bg.brighter());
+            }
+
+            public void mouseExited(MouseEvent e) {
+                btn.setBackground(bg);
+            }
+        });
+        return btn;
+    }
+
+    private JButton makeSmallButton(String iconCode, String text, Color bg, Color fg, ActionListener l) {
+        JButton btn = new JButton(text);
+        btn.setIcon(createFontIcon(iconCode, 10, fg));
+        btn.setIconTextGap(4);
+        btn.setFont(new Font("Segoe UI", Font.BOLD, 8));
+        btn.setForeground(fg);
+        btn.setBackground(bg);
+        btn.setBorderPainted(false);
+        btn.setFocusPainted(false);
+        btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btn.setContentAreaFilled(false);
+        btn.setOpaque(true);
+        btn.setPreferredSize(new Dimension(90, 22));
+        btn.setBorder(BorderFactory.createEmptyBorder(0, 6, 0, 6));
+        btn.addActionListener(l);
+
+        // Hover effects
+        btn.addMouseListener(new MouseAdapter() {
+            public void mouseEntered(MouseEvent e) {
+                btn.setBackground(bg.brighter());
+            }
+
+            public void mouseExited(MouseEvent e) {
+                btn.setBackground(bg);
+            }
         });
         return btn;
     }
 
     /**
-     * Creates an Icon instance using a font character, solving vertical alignment issues.
-     * Rendering an icon from a font directly onto a graphics context avoids the "ghost text"
+     * Creates an Icon instance using a font character, solving vertical alignment
+     * issues.
+     * Rendering an icon from a font directly onto a graphics context avoids the
+     * "ghost text"
      * vertical layout bugs often caused by using embedded HTML inside JButtons.
      * 
      * @param text  The Unicode string representing the icon.
      * @param size  The size (width and height) of the icon square in pixels.
      * @param color The color to paint the icon.
-     * @return An Icon implementation that draws the font character centered perfectly.
+     * @return An Icon implementation that draws the font character centered
+     *         perfectly.
      */
     private Icon createFontIcon(String text, int size, Color color) {
         return new Icon() {
             private Font f = new Font("Segoe MDL2 Assets", Font.PLAIN, size);
-            public int getIconWidth() { return size; }
-            public int getIconHeight() { return size; }
+
+            public int getIconWidth() {
+                return size;
+            }
+
+            public int getIconHeight() {
+                return size;
+            }
+
             public void paintIcon(Component c, Graphics g, int x, int y) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
@@ -357,10 +536,10 @@ public class SalarySlipGenerator extends JFrame {
         JLabel lbl = new JLabel(label);
         lbl.setFont(FONT_SUB);
         lbl.setForeground(TEXT_MUTED);
-        
+
         valLbl.setFont(FONT_CARD_NUM);
         valLbl.setForeground(iconColor);
-        
+
         info.add(lbl);
         info.add(valLbl);
 
@@ -370,34 +549,45 @@ public class SalarySlipGenerator extends JFrame {
     }
 
     private void updateDashboardStats() {
-        if (model == null) return;
-        
+        if (model == null)
+            return;
+
         int total = model.getRowCount();
         int generated = 0;
         int pending = 0;
         int sent = 0;
-        
+
         for (int i = 0; i < total; i++) {
             String slipStatus = (String) model.getValueAt(i, 6);
             String mailStatus = (String) model.getValueAt(i, 7);
-            
-            if ("Generated".equals(slipStatus)) generated++;
-            if ("Pending".equals(slipStatus)) pending++;
-            if ("Sent".equals(mailStatus)) sent++;
+
+            if ("Generated".equals(slipStatus))
+                generated++;
+            if ("Pending".equals(slipStatus))
+                pending++;
+            if ("Sent".equals(mailStatus))
+                sent++;
         }
-        
-        if (totalCountLbl != null) totalCountLbl.setText(String.valueOf(total));
-        if (generatedCountLbl != null) generatedCountLbl.setText(String.valueOf(generated));
-        if (pendingCountLbl != null) pendingCountLbl.setText(String.valueOf(pending));
-        if (mailsSentCountLbl != null) mailsSentCountLbl.setText(String.valueOf(sent));
+
+        if (totalCountLbl != null)
+            totalCountLbl.setText(String.valueOf(total));
+        if (generatedCountLbl != null)
+            generatedCountLbl.setText(String.valueOf(generated));
+        if (pendingCountLbl != null)
+            pendingCountLbl.setText(String.valueOf(pending));
+        if (mailsSentCountLbl != null)
+            mailsSentCountLbl.setText(String.valueOf(sent));
     }
 
     private String getFormattedMonth() {
         String rawMonth = (String) monthCombo.getSelectedItem();
-        if (rawMonth == null) return "Unknown";
+        if (rawMonth == null)
+            return "Unknown";
         try {
-            java.time.format.DateTimeFormatter out = java.time.format.DateTimeFormatter.ofPattern("MMM-yy", java.util.Locale.ENGLISH);
-            java.time.LocalDate date = java.time.LocalDate.parse("01 " + rawMonth, java.time.format.DateTimeFormatter.ofPattern("dd MMMM yyyy", java.util.Locale.ENGLISH));
+            java.time.format.DateTimeFormatter out = java.time.format.DateTimeFormatter.ofPattern("MMM-yy",
+                    java.util.Locale.ENGLISH);
+            java.time.LocalDate date = java.time.LocalDate.parse("01 " + rawMonth,
+                    java.time.format.DateTimeFormatter.ofPattern("dd MMMM yyyy", java.util.Locale.ENGLISH));
             return date.format(out);
         } catch (Exception e) {
             return rawMonth.replace(" ", "-");
@@ -406,22 +596,25 @@ public class SalarySlipGenerator extends JFrame {
 
     private void previewPdf(String pdfPath, String password) {
         try {
-            org.apache.pdfbox.pdmodel.PDDocument document = org.apache.pdfbox.Loader.loadPDF(new java.io.File(pdfPath), password);
+            org.apache.pdfbox.pdmodel.PDDocument document = org.apache.pdfbox.Loader.loadPDF(new java.io.File(pdfPath),
+                    password);
             org.apache.pdfbox.rendering.PDFRenderer pdfRenderer = new org.apache.pdfbox.rendering.PDFRenderer(document);
             // Render first page at 150 DPI for preview
-            java.awt.image.BufferedImage bim = pdfRenderer.renderImageWithDPI(0, 150, org.apache.pdfbox.rendering.ImageType.RGB);
+            java.awt.image.BufferedImage bim = pdfRenderer.renderImageWithDPI(0, 150,
+                    org.apache.pdfbox.rendering.ImageType.RGB);
             document.close();
-            
+
             JDialog previewDialog = new JDialog(this, "PDF Preview", true);
             previewDialog.setSize(800, 1000);
             previewDialog.setLocationRelativeTo(this);
-            
+
             JLabel imageLabel = new JLabel(new ImageIcon(bim));
             JScrollPane scrollPane = new JScrollPane(imageLabel);
             previewDialog.add(scrollPane);
             previewDialog.setVisible(true);
         } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "Error rendering PDF preview: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Error rendering PDF preview: " + ex.getMessage(), "Error",
+                    JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -438,8 +631,10 @@ public class SalarySlipGenerator extends JFrame {
     }
 
     /**
-     * Builds the large white card panel containing the search filters and the data table.
-     * This method is the largest UI constructor, setting up the custom table renderers,
+     * Builds the large white card panel containing the search filters and the data
+     * table.
+     * This method is the largest UI constructor, setting up the custom table
+     * renderers,
      * the column layout, and attaching the real-time search logic.
      * 
      * @return The fully configured main table panel.
@@ -467,7 +662,8 @@ public class SalarySlipGenerator extends JFrame {
         searchRow.setOpaque(false);
         searchRow.setBorder(BorderFactory.createEmptyBorder(16, 0, 16, 0));
 
-        // Custom Search Field that draws its own placeholder cleanly (avoids 'ghost text' bug)
+        // Custom Search Field that draws its own placeholder cleanly (avoids 'ghost
+        // text' bug)
         searchField = new JTextField() {
             @Override
             protected void paintComponent(Graphics g) {
@@ -489,15 +685,22 @@ public class SalarySlipGenerator extends JFrame {
         searchField.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(221, 221, 221), 1, true),
                 BorderFactory.createEmptyBorder(12, 16, 12, 16)));
-        
+
         // Trigger table filtering when user types
         searchField.addKeyListener(new KeyAdapter() {
-            public void keyReleased(KeyEvent e) { filterTable(); }
+            public void keyReleased(KeyEvent e) {
+                filterTable();
+            }
         });
         // Repaint on focus change to show/hide placeholder correctly
         searchField.addFocusListener(new FocusAdapter() {
-            public void focusGained(FocusEvent e) { searchField.repaint(); }
-            public void focusLost(FocusEvent e) { searchField.repaint(); }
+            public void focusGained(FocusEvent e) {
+                searchField.repaint();
+            }
+
+            public void focusLost(FocusEvent e) {
+                searchField.repaint();
+            }
         });
 
         // Month Filter Dropdown
@@ -512,7 +715,7 @@ public class SalarySlipGenerator extends JFrame {
 
         searchRow.add(searchField, BorderLayout.CENTER);
         searchRow.add(monthCombo, BorderLayout.EAST);
-        
+
         // Group title and search into a Top Panel
         JPanel topPanel = new JPanel(new BorderLayout());
         topPanel.setOpaque(false);
@@ -525,11 +728,12 @@ public class SalarySlipGenerator extends JFrame {
             public boolean isCellEditable(int r, int c) {
                 return c == 8; // Only Action column is editable
             }
+
             public Class<?> getColumnClass(int c) {
                 return String.class;
             }
         };
-        
+
         table = new JTable(model);
         table.setRowHeight(56); // Tall rows for better readability
         table.setShowGrid(false); // Clean borderless look
@@ -546,7 +750,7 @@ public class SalarySlipGenerator extends JFrame {
         th.setFont(FONT_TABLE_HEAD);
         th.setForeground(WHITE);
         th.setBackground(TABLE_HEADER_BG);
-        
+
         // Custom Header Renderer
         DefaultTableCellRenderer headerRenderer = new DefaultTableCellRenderer() {
             public Component getTableCellRendererComponent(JTable t, Object val,
@@ -575,7 +779,7 @@ public class SalarySlipGenerator extends JFrame {
                     boolean sel, boolean foc, int row, int col) {
                 JLabel lbl = (JLabel) super.getTableCellRendererComponent(t, val, sel, foc, row, col);
                 lbl.setHorizontalAlignment(SwingConstants.CENTER);
-                
+
                 // Add bottom border line to each cell
                 lbl.setBorder(BorderFactory.createCompoundBorder(
                         BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(236, 236, 236)),
@@ -632,13 +836,20 @@ public class SalarySlipGenerator extends JFrame {
         scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
 
-        // Put scroll pane directly into BorderLayout.CENTER of the card so it can expand 
-        // properly to fill space, guaranteeing scrollbars are fully functional and usable on resize.
+        // Put scroll pane directly into BorderLayout.CENTER of the card so it can
+        // expand
+        // properly to fill space, guaranteeing scrollbars are fully functional and
+        // usable on resize.
         card.add(scroll, BorderLayout.CENTER);
 
-        // -- Send All Button --
-        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 16));
+        // -- Bottom Action Panel (Send All & Logs) --
+        JPanel bottomPanel = new JPanel();
+        bottomPanel.setLayout(new BoxLayout(bottomPanel, BoxLayout.Y_AXIS));
         bottomPanel.setOpaque(false);
+
+        // Row 1: Send Mail to All Button
+        JPanel row1 = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        row1.setOpaque(false);
         JButton sendAllBtn = new JButton("Send Mail to All");
         sendAllBtn.setIcon(createFontIcon("\uE724", 14, WHITE));
         sendAllBtn.setIconTextGap(8);
@@ -657,23 +868,24 @@ public class SalarySlipGenerator extends JFrame {
             // =========================================================
             if (smtpPassword == null || smtpPassword.isEmpty()) {
                 smtpPassword = promptForPassword();
-                if (smtpPassword == null) return;
+                if (smtpPassword == null)
+                    return;
             }
-            
+
             int totalSent = 0;
             int totalFailed = 0;
             int totalSkipped = 0;
             String month = getFormattedMonth();
-            
+
             for (int i = 0; i < table.getRowCount(); i++) {
                 int modelRow = table.convertRowIndexToModel(i);
                 String empId = (String) model.getValueAt(modelRow, 0);
-                
+
                 if (Utils.MailUtil.isSent(empId, month)) {
                     totalSkipped++;
                     continue; // Skip already sent
                 }
-                
+
                 boolean success = attemptSendSingleSlip(modelRow);
                 if (success) {
                     model.setValueAt("Sent", modelRow, 7);
@@ -683,30 +895,59 @@ public class SalarySlipGenerator extends JFrame {
                     totalFailed++;
                 }
             }
-            
+
             updateDashboardStats();
-            JOptionPane.showMessageDialog(card, 
-                "Batch send complete.\nSent: " + totalSent + "\nFailed: " + totalFailed + "\nSkipped (Already Sent): " + totalSkipped, 
-                "Send Mail", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(card,
+                    "Batch send complete.\nSent: " + totalSent + "\nFailed: " + totalFailed
+                            + "\nSkipped (Already Sent): " + totalSkipped,
+                    "Send Mail", JOptionPane.INFORMATION_MESSAGE);
         });
-        
+
         // Button hover effect
         sendAllBtn.addMouseListener(new MouseAdapter() {
-            public void mouseEntered(MouseEvent e) { sendAllBtn.setBackground(new Color(34, 197, 94)); }
-            public void mouseExited(MouseEvent e) { sendAllBtn.setBackground(GREEN); }
+            public void mouseEntered(MouseEvent e) {
+                sendAllBtn.setBackground(new Color(34, 197, 94));
+            }
+
+            public void mouseExited(MouseEvent e) {
+                sendAllBtn.setBackground(GREEN);
+            }
         });
-        
-        bottomPanel.add(sendAllBtn);
+        row1.add(sendAllBtn);
+
+        // Row 2: Log Toggle Switch & View Log Buttons
+        JPanel row2 = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        row2.setOpaque(false);
+        row2.setBorder(BorderFactory.createEmptyBorder(12, 0, 0, 0)); // Spacing between row1 and row2
+
+        // Custom pill-shaped Switch Button matching the user's design!
+        SwitchButton toggleLogBtn = new SwitchButton();
+        toggleLogBtn.addActionListener(ev -> {
+            boolean active = toggleLogBtn.isSelected();
+            Services.CsvReaderService.isLoggingEnabled = active;
+        });
+        row2.add(toggleLogBtn);
+
+        // Add horizontal spacing between the toggle switch and View Log button
+        row2.add(Box.createHorizontalStrut(14));
+
+        // View Log Button
+        row2.add(makeSmallButton("\uE9F9", "View Log", BLUE_MID, WHITE, ev -> showLogDialog()));
+
+        bottomPanel.add(row1);
+        bottomPanel.add(row2);
         card.add(bottomPanel, BorderLayout.SOUTH);
 
         return card;
     }
 
     /* ===================== ACTION CELL ===================== */
-    
+
     /**
-     * Custom TableCellRenderer to display action buttons (View, Send) inside a table cell.
-     * The renderer only paints the UI representation. It does not handle click events.
+     * Custom TableCellRenderer to display action buttons (View, Send) inside a
+     * table cell.
+     * The renderer only paints the UI representation. It does not handle click
+     * events.
      */
     private class ActionRenderer implements TableCellRenderer {
         public Component getTableCellRendererComponent(JTable t, Object val,
@@ -717,8 +958,10 @@ public class SalarySlipGenerator extends JFrame {
 
     /**
      * Custom TableCellEditor to make the action buttons actually clickable.
-     * When a user clicks the cell, the JTable switches from the Renderer to this Editor.
-     * This Editor attaches actual ActionListeners to the buttons so they respond to clicks.
+     * When a user clicks the cell, the JTable switches from the Renderer to this
+     * Editor.
+     * This Editor attaches actual ActionListeners to the buttons so they respond to
+     * clicks.
      */
     private class ActionEditor extends AbstractCellEditor implements TableCellEditor {
         private JPanel panel;
@@ -736,7 +979,8 @@ public class SalarySlipGenerator extends JFrame {
 
     /**
      * Creates the panel containing the "View" and "Send" icon buttons.
-     * @param row The row index
+     * 
+     * @param row      The row index
      * @param editable Whether to attach click listeners
      * @return The populated JPanel
      */
@@ -748,50 +992,59 @@ public class SalarySlipGenerator extends JFrame {
 
         JButton viewBtn = createIconButton("view", new Color(238, 244, 255), PRIMARY_BLUE);
         viewBtn.setToolTipText("View Salary Slip");
-        
+
         JButton sendBtn = createIconButton("send", GREEN_LIGHT, GREEN);
         sendBtn.setToolTipText("Send via Email");
 
-        // Only attach click logic if we are rendering for the Editor (not just Display Renderer)
+        // Only attach click logic if we are rendering for the Editor (not just Display
+        // Renderer)
         if (editable) {
             int modelRow = table.convertRowIndexToModel(row);
-            
+
             viewBtn.addActionListener(e -> {
                 if (currentRawCsvData == null || modelRow >= currentRawCsvData.size()) {
-                    JOptionPane.showMessageDialog(this, "No raw data found to generate PDF.", "Error", JOptionPane.ERROR_MESSAGE);
+                    JOptionPane.showMessageDialog(this, "No raw data found to generate PDF.", "Error",
+                            JOptionPane.ERROR_MESSAGE);
                 } else {
                     try {
                         String[] rawData = currentRawCsvData.get(modelRow);
-                        
+
                         String empId = rawData.length > 1 && rawData[1] != null ? rawData[1].trim() : "";
                         String name = rawData.length > 2 && rawData[2] != null ? rawData[2].trim() : "";
                         String doj = rawData.length > 3 && rawData[3] != null ? rawData[3].trim() : "";
-                        
+
                         String formattedMonth = getFormattedMonth();
-                        String outputDir = System.getProperty("user.home") + java.io.File.separator + "SalarySlips" + java.io.File.separator + formattedMonth;
+                        String outputDir = System.getProperty("user.home") + java.io.File.separator + "SalarySlips"
+                                + java.io.File.separator + formattedMonth;
                         String filename = empId + "_" + formattedMonth + ".pdf";
-                        
+
                         java.io.File pdfFile = new java.io.File(outputDir, filename);
-                        
+
                         if (pdfFile.exists()) {
                             String formattedDoj = doj;
                             try {
-                                java.time.format.DateTimeFormatter inFormat = java.time.format.DateTimeFormatter.ofPattern("dd-MMM-yy", java.util.Locale.ENGLISH);
-                                java.time.format.DateTimeFormatter outFormat = java.time.format.DateTimeFormatter.ofPattern("ddMMyyyy");
+                                java.time.format.DateTimeFormatter inFormat = java.time.format.DateTimeFormatter
+                                        .ofPattern("dd-MMM-yy", java.util.Locale.ENGLISH);
+                                java.time.format.DateTimeFormatter outFormat = java.time.format.DateTimeFormatter
+                                        .ofPattern("ddMMyyyy");
                                 java.time.LocalDate date = java.time.LocalDate.parse(doj, inFormat);
                                 formattedDoj = date.format(outFormat);
-                            } catch (Exception ex) {}
+                            } catch (Exception ex) {
+                            }
                             String pwd = empId + formattedDoj;
-                            
+
                             previewPdf(pdfFile.getAbsolutePath(), pwd);
                         } else {
-                            JOptionPane.showMessageDialog(this, "PDF not found for " + name + "!\nExpected path: " + pdfFile.getAbsolutePath(), "Error", JOptionPane.ERROR_MESSAGE);
+                            JOptionPane.showMessageDialog(this,
+                                    "PDF not found for " + name + "!\nExpected path: " + pdfFile.getAbsolutePath(),
+                                    "Error", JOptionPane.ERROR_MESSAGE);
                         }
                     } catch (Exception ex) {
-                        JOptionPane.showMessageDialog(this, "Error opening PDF: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                        JOptionPane.showMessageDialog(this, "Error opening PDF: " + ex.getMessage(), "Error",
+                                JOptionPane.ERROR_MESSAGE);
                     }
                 }
-                
+
                 if (table.isEditing()) {
                     table.getCellEditor().stopCellEditing(); // Commit edit mode
                 }
@@ -804,14 +1057,15 @@ public class SalarySlipGenerator extends JFrame {
                 String name = (String) model.getValueAt(modelRow, 1);
                 String empId = (String) model.getValueAt(modelRow, 0);
                 String month = getFormattedMonth();
-                
+
                 // Check if already sent
                 if (Utils.MailUtil.isSent(empId, month)) {
                     int res = JOptionPane.showConfirmDialog(this,
                             name + " has already been sent a slip for this month. Send again?",
                             "Already Sent", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
                     if (res != JOptionPane.YES_OPTION) {
-                        if (table.isEditing()) table.getCellEditor().stopCellEditing();
+                        if (table.isEditing())
+                            table.getCellEditor().stopCellEditing();
                         return;
                     }
                 }
@@ -819,7 +1073,8 @@ public class SalarySlipGenerator extends JFrame {
                 if (smtpPassword == null || smtpPassword.isEmpty()) {
                     smtpPassword = promptForPassword();
                     if (smtpPassword == null) {
-                        if (table.isEditing()) table.getCellEditor().stopCellEditing();
+                        if (table.isEditing())
+                            table.getCellEditor().stopCellEditing();
                         return; // User cancelled
                     }
                 }
@@ -828,7 +1083,7 @@ public class SalarySlipGenerator extends JFrame {
                         "Send salary slip to " + name + " via email?",
                         "Confirm Send", JOptionPane.YES_NO_OPTION,
                         JOptionPane.QUESTION_MESSAGE);
-                        
+
                 if (confirm == JOptionPane.YES_OPTION) {
                     boolean success = attemptSendSingleSlip(modelRow);
                     if (success) {
@@ -863,16 +1118,16 @@ public class SalarySlipGenerator extends JFrame {
             protected void paintComponent(Graphics g) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                
+
                 // Draw rounded background
                 g2.setColor(getBackground());
                 g2.fillRoundRect(0, 0, getWidth(), getHeight(), 10, 10);
-                
+
                 // Draw icon lines/shapes
                 g2.setColor(getForeground());
                 int cx = getWidth() / 2;
                 int cy = getHeight() / 2;
-                
+
                 if (type.equals("view")) { // Draw Eye Icon
                     g2.setStroke(new BasicStroke(1.5f));
                     g2.drawOval(cx - 8, cy - 5, 16, 10);
@@ -882,7 +1137,7 @@ public class SalarySlipGenerator extends JFrame {
                     int[] yPoints = { cy - 7, cy, cy + 7, cy };
                     g2.fillPolygon(xPoints, yPoints, 4);
                 }
-                
+
                 g2.dispose();
                 super.paintComponent(g);
             }
@@ -898,7 +1153,7 @@ public class SalarySlipGenerator extends JFrame {
     }
 
     /* ===================== FILTER ===================== */
-    
+
     /**
      * Filters the JTable based on the search query input and the selected month.
      * This applies a custom RowFilter to the table's TableRowSorter.
@@ -908,21 +1163,21 @@ public class SalarySlipGenerator extends JFrame {
     private void filterTable() {
         String query = searchField.getText().toLowerCase();
         String month = monthCombo.getSelectedItem().toString();
-        
+
         // Define our custom filtering logic
         RowFilter<DefaultTableModel, Object> rf = new RowFilter<>() {
             public boolean include(Entry<? extends DefaultTableModel, ? extends Object> entry) {
                 String name = entry.getStringValue(1).toLowerCase(); // Employee Name (Col 1)
-                String id = entry.getStringValue(0).toLowerCase();   // Employee ID (Col 0)
-                String m = entry.getStringValue(5);                  // Month (Col 5)
-                
+                String id = entry.getStringValue(0).toLowerCase(); // Employee ID (Col 0)
+                String m = entry.getStringValue(5); // Month (Col 5)
+
                 // Must match both the text search and the dropdown month selection
                 boolean matchText = name.contains(query) || id.contains(query);
                 boolean matchMonth = month.equals("All") || m.equals(month);
                 return matchText && matchMonth;
             }
         };
-        
+
         // Apply the filter to the sorter
         TableRowSorter<DefaultTableModel> sorter = (TableRowSorter<DefaultTableModel>) table.getRowSorter();
         if (sorter != null) {
@@ -983,16 +1238,16 @@ public class SalarySlipGenerator extends JFrame {
             super.paintComponent(g);
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            
+
             // 1) Draw shadow (drawn underneath the main shape)
             g2.setColor(new Color(0, 0, 0, 18)); // semi-transparent black
             g2.fillRoundRect(SHADOW_OFFSET, SHADOW_OFFSET,
                     getWidth() - SHADOW_OFFSET, getHeight() - SHADOW_OFFSET, ARC, ARC);
-                    
+
             // 2) Draw actual panel background on top of shadow
             g2.setColor(getBackground());
             g2.fillRoundRect(0, 0, getWidth() - SHADOW_OFFSET, getHeight() - SHADOW_OFFSET, ARC, ARC);
-            
+
             g2.dispose();
         }
     }
@@ -1000,7 +1255,8 @@ public class SalarySlipGenerator extends JFrame {
     /* ===================== MAILER HELPERS ===================== */
     private String promptForPassword() {
         JPasswordField pf = new JPasswordField();
-        int okCxl = JOptionPane.showConfirmDialog(this, pf, "Enter SMTP Password:", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        int okCxl = JOptionPane.showConfirmDialog(this, pf, "Enter SMTP Password:", JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE);
         if (okCxl == JOptionPane.OK_OPTION) {
             return new String(pf.getPassword());
         }
@@ -1012,40 +1268,58 @@ public class SalarySlipGenerator extends JFrame {
     // Extracts data from the CSV row and passes it to MailUtil
     // =========================================================
     private boolean attemptSendSingleSlip(int modelRow) {
-        if (currentRawCsvData == null || modelRow >= currentRawCsvData.size()) return false;
+        if (currentRawCsvData == null || modelRow >= currentRawCsvData.size())
+            return false;
         String[] rawData = currentRawCsvData.get(modelRow);
-        
+
         String empId = rawData.length > 1 ? rawData[1].trim() : "";
         String name = rawData.length > 2 ? rawData[2].trim() : "";
         String doj = rawData.length > 3 ? rawData[3].trim() : "";
         String email = rawData.length > 21 ? rawData[21].trim() : "";
-        
+
         String formattedMonth = getFormattedMonth();
-        String outputDir = System.getProperty("user.home") + java.io.File.separator + "SalarySlips" + java.io.File.separator + formattedMonth;
+        String outputDir = System.getProperty("user.home") + java.io.File.separator + "SalarySlips"
+                + java.io.File.separator + formattedMonth;
         String filename = empId + "_" + formattedMonth + ".pdf";
         java.io.File pdfFile = new java.io.File(outputDir, filename);
 
-        return Utils.MailUtil.sendAndTrackSlip(empId, formattedMonth, email, name, doj, pdfFile.getAbsolutePath(), smtpPassword);
+        return Utils.MailUtil.sendAndTrackSlip(empId, formattedMonth, email, name, doj, pdfFile.getAbsolutePath(),
+                smtpPassword);
     }
 
     /* ===================== MAIN ===================== */
     /**
-     * Application entry point. Sets the Native System Look & Feel and creates the frame.
+     * Application entry point. Sets the Native System Look & Feel and creates the
+     * frame.
      */
     public static void main(String[] args) {
+        System.out.println("LOG: Main method entered");
         try {
             // Attempt to use system-native styles for UI elements like scrollbars
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception ignored) {
+            System.out.println("LOG: Look and Feel set successfully");
+        } catch (Exception e) {
+            System.out.println("LOG: Look and Feel setting failed: " + e.getMessage());
             // Fallback to cross-platform L&F if system style fails
         }
 
         SwingUtilities.invokeLater(() -> {
-            SalarySlipGenerator frame = new SalarySlipGenerator();
-            // Attach a sorter to our table model so column headers can be clicked to sort rows
-            frame.table.setRowSorter(new TableRowSorter<>(frame.model));
-            frame.setVisible(true); // Launch!
-            Utils.GitUtils.startUpdateCheck(frame);
+            try {
+                System.out.println("LOG: Initializing SalarySlipGenerator frame");
+                SalarySlipGenerator frame = new SalarySlipGenerator();
+                System.out.println("LOG: Frame initialized, setting row sorter");
+                // Attach a sorter to our table model so column headers can be clicked to sort
+                // rows
+                frame.table.setRowSorter(new TableRowSorter<>(frame.model));
+                System.out.println("LOG: Sorter set, setting frame visible");
+                frame.setVisible(true); // Launch!
+                System.out.println("LOG: Frame set visible, starting update check");
+                Utils.GitUtils.startUpdateCheck(frame);
+                System.out.println("LOG: Update check started");
+            } catch (Throwable t) {
+                System.err.println("LOG ERROR: Failed to launch UI!");
+                t.printStackTrace();
+            }
         });
     }
 }
