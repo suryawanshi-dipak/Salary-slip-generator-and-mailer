@@ -21,6 +21,8 @@ import com.itextpdf.layout.properties.VerticalAlignment;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * ============================================================================
@@ -28,7 +30,8 @@ import java.io.FileNotFoundException;
  * ============================================================================
  * ROLE:
  * This utility handles PDF compilation and formatting for employee salary slips.
- * It reads raw CSV row structures, parses values into fields, constructs tables,
+ * It reads EmployeeSalary row structures, parses values into fields, constructs tables
+ * (dynamically hiding rows based on the v2 conditional row suppression requirements),
  * paints headers/totals, and outputs encrypted PDF documents to disk.
  *
  * HOW IT WORKS:
@@ -41,23 +44,44 @@ import java.io.FileNotFoundException;
  */
 public class PdfUtil {
 
-    // Define colors used in the layout
     private static final DeviceRgb BLUE_TEXT = new DeviceRgb(0, 51, 153);
     private static final DeviceRgb GREY_BG = new DeviceRgb(200, 200, 200);
+
+    private static class EarningRow {
+        String label;
+        String fixedAmt;
+        String earnedAmt;
+
+        EarningRow(String label, String fixedAmt, String earnedAmt) {
+            this.label = label;
+            this.fixedAmt = fixedAmt;
+            this.earnedAmt = earnedAmt;
+        }
+    }
+
+    private static class DeductionRow {
+        String label;
+        String amt;
+
+        DeductionRow(String label, String amt) {
+            this.label = label;
+            this.amt = amt;
+        }
+    }
 
     /**
      * Generates a comprehensive, formatted PDF salary slip for an individual employee.
      * 
-     * <p>This method takes a single row of employee data parsed from a CSV file and constructs
+     * <p>This method takes an EmployeeSalary object and constructs
      * a professional salary slip using the iText PDF library. The generated document includes
      * a customized header with company branding, employee details, and a detailed breakdown
-     * of salary components (earnings and deductions).</p>
+     * of salary components (earnings and deductions) with dynamic row suppression.</p>
      * 
      * <h3>Document Structure:</h3>
      * <ul>
      *   <li><b>Header:</b> Contains the company logo and corporate address.</li>
-     *   <li><b>Employee Details:</b> Displays Name, Employee ID, Date of Joining, Designation, Department, Location, Leaves, and Paid Days.</li>
-     *   <li><b>Salary Details:</b> A tabular breakdown separating Fixed vs Earned components, Gross Salary, Deductions (PT, TDS), and final Net Pay.</li>
+     *   <li><b>Employee Details:</b> Displays Name, Employee ID, Date of Joining, Designation, Leaves, Paid Days, and Masked Bank Account.</li>
+     *   <li><b>Salary Details:</b> A tabular breakdown separating Fixed vs Earned components, Gross Salary, Deductions (PT, TDS), and final Net Pay. Omit rows with 0 amounts for conditional components.</li>
      *   <li><b>Footer:</b> System generation disclaimer.</li>
      * </ul>
      * 
@@ -67,74 +91,89 @@ public class PdfUtil {
      * (e.g., if EmpID is VT0001 and DOJ is 01-Jan-20, the password is {@code VT000101012020}).</p>
      * 
      * <h3>Error Handling:</h3>
-     * <p>Indices from the {@code rawData} array are extracted safely with fallback to "0" if missing or empty.
+     * <p>Fields are extracted safely with fallback to "0" if missing or empty.
      * Any failure in parsing the Date of Joining defaults to the original unparsed string for password generation,
      * while logging the error. Exceptions during file I/O operations are caught, logged, and gracefully handled by returning {@code null}.</p>
      * 
-     * @param rawData     An array of strings representing a single row from the parsed CSV. 
-     *                    Expected indices: [1] EmpID, [2] Name, [3] DOJ, [4-7] Fixed Salary parts, 
-     *                    [8] Leaves, [9-10] Days info, [11-14] Earned Salary parts, [15-18] Deductions, [19] Net Pay.
+     * @param empData     An EmployeeSalary object representing a single row from the parsed CSV.
      * @param outputDir   The absolute or relative directory path where the generated PDF should be saved. 
      *                    If the directory does not exist, it will be created.
      * @param monthString The formatted month/year string (e.g., "Jul-26") to display on the salary slip.
      * @param filename    The desired filename for the generated output (e.g., "VT0001_Jul-26.pdf").
      * @return The absolute path of the generated PDF file if successful; {@code null} if an exception occurs during generation.
      */
-    public static String generateSalarySlip(String[] rawData, String outputDir, String monthString, String filename) {
-        // CHANGE MADE HERE: Added logline to indicate the start of PDF generation.
+    public static String generateSalarySlip(Services.CsvReaderService.EmployeeSalary empData, String outputDir, String monthString, String filename) {
         LogUtils.info("Starting PDF generation for filename: " + filename);
         File dir = new File(outputDir);
         if (!dir.exists()) dir.mkdirs();
 
-        // Safely extract CSV indices with fallbacks
-        String empId = safe(rawData, 1);
-        String name = safe(rawData, 2);
-        String doj = safe(rawData, 3);
+        String empId = safeStr(empData.eCode);
+        String name = safeStr(empData.name);
+        String doj = safeStr(empData.doj);
         
         Utils.LogUtils.info("Generating PDF salary slip for employee ID: {}, month: {}", empId, monthString);
         
-        // Month and Static details (since not in CSV explicitly formatted)
         String month = monthString != null ? monthString : "Unknown"; 
-        String designation = "Jr. Software Developer";
-        String department = "Application Development";
-        String location = "Maharashtra";
+        String designation = safeStr(empData.designation);
+        String bankName = safeStr(empData.bankName);
+        String maskedBankAccount = safeStr(empData.maskedBankAccountNo());
         
-        // Leaves & Days
-        String leaves = safe(rawData, 8);
-        String daysInMonth = safe(rawData, 9);
-        String paidDays = safe(rawData, 10);
+        String leaves = safe(empData.leavesAvailed);
+        String daysInMonth = safe(empData.monthDays);
+        String paidDays = safe(empData.daysWorked);
         
-        // Fixed Salary vs Earned Salary
-        String basicFixed = safe(rawData, 4);
-        String hraFixed = safe(rawData, 5);
-        String splFixed = safe(rawData, 6);
-        String grossFixed = safe(rawData, 7);
-        
-        String basicEarned = safe(rawData, 11);
-        String hraEarned = safe(rawData, 12);
-        String splEarned = safe(rawData, 13);
-        String grossEarned = safe(rawData, 14);
-        
-        // Deductions & Net
-        String pt = safe(rawData, 15);
-        String tds = safe(rawData, 17);
-        String totalDed = safe(rawData, 18);
-        String netPay = safe(rawData, 19);
+        String grossSalary = safe(empData.grossSalary);
+        String totalDed = safe(empData.totalDeduction);
+        String netPay = safe(empData.netPay);
 
-        // Filename
+        // --- Earnings Table Preparation ---
+        // We dynamically build the list of earnings to allow for row suppression.
+        List<EarningRow> earnings = new ArrayList<>();
+        
+        // Unconditional components: Always printed even if the value is zero.
+        earnings.add(new EarningRow("Basic Salary", safe(empData.totalBasic), safe(empData.basic)));
+        earnings.add(new EarningRow("House Rent Allowance", safe(empData.totalHra), safe(empData.hra)));
+        earnings.add(new EarningRow("Special Allowances", safe(empData.totalSplAllowance), safe(empData.splAllowance)));
+        earnings.add(new EarningRow("KRA", safe(empData.totalKra), safe(empData.kra))); // KRA always shown
+        
+        // Conditional components: Only added if their value is greater than 0.
+        // We pass an empty string ("") for the Fixed/Contractual column since these are payable-only variables.
+        if (parseInteger(empData.performanceBonus) != 0) {
+            earnings.add(new EarningRow("Performance Bonus", "", safe(empData.performanceBonus)));
+        }
+        if (parseInteger(empData.officeExpense) != 0) {
+            earnings.add(new EarningRow("Office Expense", "", safe(empData.officeExpense)));
+        }
+        if (parseInteger(empData.leavePayment) != 0) {
+            earnings.add(new EarningRow("Leave Payment", "", safe(empData.leavePayment)));
+        }
+
+        // --- Deductions Table Preparation ---
+        // Dynamically build deductions side.
+        List<DeductionRow> deductions = new ArrayList<>();
+        deductions.add(new DeductionRow("Professional tax", safe(empData.pt)));
+        deductions.add(new DeductionRow("TDS Deducted", safe(empData.tds)));
+        
+        if (parseInteger(empData.loanDeducted) != 0) {
+            deductions.add(new DeductionRow("Loan Deducted", safe(empData.loanDeducted)));
+        }
+
         String destPath = new File(dir, filename).getAbsolutePath();
         
-        // Password Derivation (E.Code + DOJ in ddMMyyyy)
+        // --- Password Generation (FR-06) ---
+        // The password is Emp ID + DOJ (in ddMMyyyy format).
+        // The source CSV now uses d-MMM-yy (e.g. 1-Apr-19), so we must parse it back into the strict format.
         String formattedDoj = doj;
         try {
-            java.time.format.DateTimeFormatter inFormat = java.time.format.DateTimeFormatter.ofPattern("dd-MMM-yy", java.util.Locale.ENGLISH);
+            java.time.format.DateTimeFormatter inFormat = java.time.format.DateTimeFormatter.ofPattern("d-MMM-yy", java.util.Locale.ENGLISH);
             java.time.format.DateTimeFormatter outFormat = java.time.format.DateTimeFormatter.ofPattern("ddMMyyyy");
             java.time.LocalDate date = java.time.LocalDate.parse(doj, inFormat);
             formattedDoj = date.format(outFormat);
         } catch (Exception e) {
-            // fallback to original if parsing fails
-            Utils.LogUtils.warn("Could not parse DOJ: {} for employee ID: {}", doj, empId);
+            Utils.LogUtils.warn("Could not parse DOJ: {} for employee ID: {}. Falling back to unformatted string.", doj, empId);
         }
+        
+        // Final Document Password
         String pwd = empId + formattedDoj;
 
         try {
@@ -144,30 +183,26 @@ public class PdfUtil {
             PdfDocument pdf = new PdfDocument(writer);
             Document document = new Document(pdf);
             
-            // Set margins
             document.setMargins(36, 36, 36, 36);
 
-            // Create main outer table to act as a border for everything
             Table outerTable = new Table(UnitValue.createPercentArray(new float[]{100})).useAllAvailableWidth();
             outerTable.setBorder(new SolidBorder(1));
 
-            // --- HEADER SECTION ---
+            // Header Section
             Cell headerCell = new Cell().setBorder(Border.NO_BORDER);
             Table headerGrid = new Table(UnitValue.createPercentArray(new float[]{20, 60, 20})).useAllAvailableWidth();
             
-            // Logo
             Cell logoCell = new Cell().setBorder(Border.NO_BORDER).setVerticalAlignment(VerticalAlignment.MIDDLE);
             try {
                 ImageData data = ImageDataFactory.create("DATA/logo.jpg");
                 Image img = new Image(data);
-                img.setWidth(80); // Increased scale to fit better
+                img.setWidth(80); 
                 logoCell.add(img);
             } catch (Exception e) {
                 logoCell.add(new Paragraph("[LOGO]").setFontSize(10).setItalic());
             }
             headerGrid.addCell(logoCell);
             
-            // Company Info (Centered on the page)
             Cell companyInfo = new Cell().setBorder(Border.NO_BORDER)
                     .setTextAlignment(TextAlignment.CENTER)
                     .setVerticalAlignment(VerticalAlignment.MIDDLE);
@@ -177,18 +212,15 @@ public class PdfUtil {
             companyInfo.add(new Paragraph("Office No.208, Building No.05,Millenium Business Park,Sector 3,Mahape Ghansoli,Navi Mumbai-400710").setFontColor(BLUE_TEXT).setFontSize(8));
             headerGrid.addCell(companyInfo);
             
-            // Empty right cell to balance the 20% logo cell and keep text dead-center
             headerGrid.addCell(new Cell().setBorder(Border.NO_BORDER));
-            
             headerCell.add(headerGrid);
             outerTable.addCell(headerCell);
 
-            // --- SALARY SLIP TITLE ---
             Cell titleCell = new Cell().setBackgroundColor(GREY_BG).setTextAlignment(TextAlignment.CENTER).setBold().setFontSize(10);
             titleCell.add(new Paragraph("SALARY SLIP").setMargin(2));
             outerTable.addCell(titleCell);
 
-            // --- EMPLOYEE DETAILS SECTION ---
+            // Employee Details Section
             Table empDetails = new Table(UnitValue.createPercentArray(new float[]{25, 25, 30, 20})).useAllAvailableWidth();
             empDetails.setFontSize(9);
             
@@ -207,18 +239,18 @@ public class PdfUtil {
             empDetails.addCell(noBorder("Paid Days", true));
             empDetails.addCell(noBorder(paidDays, false));
             
-            empDetails.addCell(noBorder("Department", true));
-            empDetails.addCell(noBorder(department, false));
-            empDetails.addCell(noBorder("", false));
-            empDetails.addCell(noBorder("", false));
-            
-            empDetails.addCell(noBorder("Location", true));
-            empDetails.addCell(noBorder(location, false));
-            empDetails.addCell(noBorder("", false));
-            empDetails.addCell(noBorder("", false));
-            
             empDetails.addCell(noBorder("Month", true));
             empDetails.addCell(noBorder(month, true));
+            empDetails.addCell(noBorder("", false));
+            empDetails.addCell(noBorder("", false));
+            
+            empDetails.addCell(noBorder("Bank Name", true));
+            empDetails.addCell(noBorder(bankName, false));
+            empDetails.addCell(noBorder("", false));
+            empDetails.addCell(noBorder("", false));
+            
+            empDetails.addCell(noBorder("Bank Account Number", true));
+            empDetails.addCell(noBorder(maskedBankAccount, false));
             empDetails.addCell(noBorder("", false));
             empDetails.addCell(noBorder("", false));
             
@@ -229,56 +261,59 @@ public class PdfUtil {
 
             outerTable.addCell(new Cell().add(empDetails).setPadding(5));
 
-            // --- SALARY DETAILS TABLE ---
+            // Salary Details Section
             Table salaryTable = new Table(UnitValue.createPercentArray(new float[]{30, 15, 15, 25, 15})).useAllAvailableWidth();
             salaryTable.setFontSize(9);
             
-            // Header Row
             salaryTable.addCell(headerCell("SALARY DETAILS"));
             salaryTable.addCell(headerCell("Amount (Rs)"));
             salaryTable.addCell(headerCell("Amt. Payable"));
             salaryTable.addCell(headerCell("Deductions"));
             salaryTable.addCell(headerCell("Amount (Rs)"));
             
-            // Row 1
-            salaryTable.addCell(detailCell("Basic Salary", false));
-            salaryTable.addCell(detailCell(basicFixed, true));
-            salaryTable.addCell(detailCell(basicEarned, true));
-            salaryTable.addCell(detailCell("Professional tax", false));
-            salaryTable.addCell(detailCell(pt, true));
+            // --- Dynamic Table Rendering (FR-17) ---
+            // Calculate maximum number of rows needed (either earnings or deductions dictates height).
+            int maxRows = Math.max(earnings.size(), deductions.size());
             
-            // Row 2
-            salaryTable.addCell(detailCell("House Rent Allowance", false));
-            salaryTable.addCell(detailCell(hraFixed, true));
-            salaryTable.addCell(detailCell(hraEarned, true));
-            salaryTable.addCell(detailCell("TDS Deducted", false));
-            salaryTable.addCell(detailCell(tds, true));
+            // Iterate down the rows, injecting earnings on the left and deductions on the right
+            for (int i = 0; i < maxRows; i++) {
+                
+                // Inject Earning cells (or blank cells if we ran out of earnings)
+                if (i < earnings.size()) {
+                    EarningRow eRow = earnings.get(i);
+                    salaryTable.addCell(detailCell(eRow.label, false));
+                    salaryTable.addCell(detailCell(eRow.fixedAmt, true));
+                    salaryTable.addCell(detailCell(eRow.earnedAmt, true));
+                } else {
+                    salaryTable.addCell(detailCell("", false));
+                    salaryTable.addCell(detailCell("", false));
+                    salaryTable.addCell(detailCell("", false));
+                }
+                
+                // Inject Deduction cells (or blank cells if we ran out of deductions)
+                if (i < deductions.size()) {
+                    DeductionRow dRow = deductions.get(i);
+                    salaryTable.addCell(detailCell(dRow.label, false));
+                    salaryTable.addCell(detailCell(dRow.amt, true));
+                } else {
+                    salaryTable.addCell(detailCell("", false));
+                    salaryTable.addCell(detailCell("", false));
+                }
+            }
             
-            // Row 3
-            salaryTable.addCell(detailCell("Special Allowances", false));
-            salaryTable.addCell(detailCell(splFixed, true));
-            salaryTable.addCell(detailCell(splEarned, true));
-            salaryTable.addCell(detailCell("", false));
-            salaryTable.addCell(detailCell("", false));
-            
-            // Gross / Total Deductions
-            salaryTable.addCell(headerCell("Gross Salary"));
-            salaryTable.addCell(headerCell(grossFixed).setTextAlignment(TextAlignment.RIGHT));
-            salaryTable.addCell(headerCell(grossEarned).setTextAlignment(TextAlignment.RIGHT));
+            // --- Totals Row ---
+            salaryTable.addCell(headerCell(grossSalary).setTextAlignment(TextAlignment.RIGHT)); // In v2, Gross salary spans the "fixed" column but conceptually is the total contracted
+            salaryTable.addCell(headerCell(safe(empData.netSalary)).setTextAlignment(TextAlignment.RIGHT)); // Amt. Payable total is netSalary
             salaryTable.addCell(headerCell("Total Deductions"));
             salaryTable.addCell(headerCell(totalDed).setTextAlignment(TextAlignment.RIGHT));
             
-            // Net Pay
-            salaryTable.addCell(new Cell(1, 3).setBorder(Border.NO_BORDER)); // Empty span
+            salaryTable.addCell(new Cell(1, 3).setBorder(Border.NO_BORDER)); 
             salaryTable.addCell(headerCell("NET PAY").setBackgroundColor(ColorConstants.WHITE));
             salaryTable.addCell(headerCell(netPay).setBackgroundColor(ColorConstants.WHITE).setTextAlignment(TextAlignment.RIGHT));
             
             outerTable.addCell(new Cell().add(salaryTable).setPadding(0));
-            
-            // Add the outer table to document
             document.add(outerTable);
             
-            // Footer
             Paragraph footer = new Paragraph("This is a Computer Generated slip and does not require authentication")
                 .setFontSize(8)
                 .setBold()
@@ -293,8 +328,6 @@ public class PdfUtil {
             return null;
         }
     }
-
-    // --- Helper Methods for formatting cells ---
     
     private static Cell noBorder(String text, boolean bold) {
         Cell c = new Cell().add(new Paragraph(text != null ? text : "")).setBorder(Border.NO_BORDER);
@@ -317,9 +350,22 @@ public class PdfUtil {
         return c;
     }
 
-    private static String safe(String[] arr, int index) {
-        if (arr == null || index >= arr.length) return "0";
-        String val = arr[index].trim();
-        return val.isEmpty() ? "0" : val;
+    private static String safe(String val) {
+        if (val == null || val.trim().isEmpty()) return "0";
+        return val.trim();
+    }
+    
+    private static String safeStr(String val) {
+        if (val == null || val.trim().isEmpty()) return "";
+        return val.trim();
+    }
+    
+    private static int parseInteger(String val) {
+        if (val == null || val.trim().isEmpty()) return 0;
+        try {
+            return Integer.parseInt(val.trim());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 }

@@ -192,7 +192,7 @@ public class SalarySlipGenerator extends JFrame {
     }
 
     /* ===================== HEADER ===================== */
-    private java.util.List<String[]> currentRawCsvData = new java.util.ArrayList<>();
+    private java.util.List<Services.CsvReaderService.EmployeeSalary> currentRawCsvData = new java.util.ArrayList<>();
 
     /**
      * Builds the top header panel including the logo, title, and action buttons.
@@ -240,7 +240,7 @@ public class SalarySlipGenerator extends JFrame {
                                     .parsePayrollCsv(chooser.getSelectedFile().getAbsolutePath());
 
                             // Store the raw data for PDF Generation
-                            currentRawCsvData = result.rawRows;
+                            currentRawCsvData = result.employees;
 
                             // Clear existing table data and inject parsed CSV rows
                             model.setRowCount(0);
@@ -265,6 +265,9 @@ public class SalarySlipGenerator extends JFrame {
                                         "Data loaded successfully from CSV! No errors found.", "Success",
                                         JOptionPane.INFORMATION_MESSAGE);
                             }
+                        } catch (IllegalArgumentException ex) {
+                            JOptionPane.showMessageDialog(this, "CSV Validation Failed: " + ex.getMessage(), "Validation Error",
+                                    JOptionPane.ERROR_MESSAGE);
                         } catch (Exception ex) {
                             JOptionPane.showMessageDialog(this, "Error reading file: " + ex.getMessage(), "Error",
                                     JOptionPane.ERROR_MESSAGE);
@@ -287,15 +290,15 @@ public class SalarySlipGenerator extends JFrame {
                     int successCount = 0;
 
                     for (int i = 0; i < currentRawCsvData.size(); i++) {
-                        String[] rawRow = currentRawCsvData.get(i);
+                        Services.CsvReaderService.EmployeeSalary emp = currentRawCsvData.get(i);
                         // Skip empty rows or rows without an ID
-                        if (rawRow.length <= 1 || rawRow[1].trim().isEmpty())
+                        if (emp.eCode == null || emp.eCode.trim().isEmpty())
                             continue;
 
-                        String empId = rawRow[1].trim();
+                        String empId = emp.eCode.trim();
                         String filename = empId + "_" + formattedMonth + ".pdf";
 
-                        String path = Utils.PdfUtil.generateSalarySlip(rawRow, outputDir, formattedMonth, filename);
+                        String path = Utils.PdfUtil.generateSalarySlip(emp, outputDir, formattedMonth, filename);
                         if (path != null) {
                             successCount++;
                             if (i < model.getRowCount()) {
@@ -1112,11 +1115,11 @@ public class SalarySlipGenerator extends JFrame {
                             JOptionPane.ERROR_MESSAGE);
                 } else {
                     try {
-                        String[] rawData = currentRawCsvData.get(modelRow);
+                        Services.CsvReaderService.EmployeeSalary empData = currentRawCsvData.get(modelRow);
 
-                        String empId = rawData.length > 1 && rawData[1] != null ? rawData[1].trim() : "";
-                        String name = rawData.length > 2 && rawData[2] != null ? rawData[2].trim() : "";
-                        String doj = rawData.length > 3 && rawData[3] != null ? rawData[3].trim() : "";
+                        String empId = empData.eCode != null ? empData.eCode.trim() : "";
+                        String name = empData.name != null ? empData.name.trim() : "";
+                        String doj = empData.doj != null ? empData.doj.trim() : "";
 
                         String formattedMonth = getFormattedMonth();
                         String outputDir = System.getProperty("user.home") + java.io.File.separator + "SalarySlips"
@@ -1129,7 +1132,7 @@ public class SalarySlipGenerator extends JFrame {
                             String formattedDoj = doj;
                             try {
                                 java.time.format.DateTimeFormatter inFormat = java.time.format.DateTimeFormatter
-                                        .ofPattern("dd-MMM-yy", java.util.Locale.ENGLISH);
+                                        .ofPattern("d-MMM-yy", java.util.Locale.ENGLISH);
                                 java.time.format.DateTimeFormatter outFormat = java.time.format.DateTimeFormatter
                                         .ofPattern("ddMMyyyy");
                                 java.time.LocalDate date = java.time.LocalDate.parse(doj, inFormat);
@@ -1375,12 +1378,12 @@ public class SalarySlipGenerator extends JFrame {
     private boolean attemptSendSingleSlip(int modelRow) {
         if (currentRawCsvData == null || modelRow >= currentRawCsvData.size())
             return false;
-        String[] rawData = currentRawCsvData.get(modelRow);
+        Services.CsvReaderService.EmployeeSalary empData = currentRawCsvData.get(modelRow);
 
-        String empId = rawData.length > 1 ? rawData[1].trim() : "";
-        String name = rawData.length > 2 ? rawData[2].trim() : "";
-        String doj = rawData.length > 3 ? rawData[3].trim() : "";
-        String email = rawData.length > 21 ? rawData[21].trim() : "";
+        String empId = empData.eCode != null ? empData.eCode.trim() : "";
+        String name = empData.name != null ? empData.name.trim() : "";
+        String doj = empData.doj != null ? empData.doj.trim() : "";
+        String email = empData.email != null ? empData.email.trim() : "";
 
         String formattedMonth = getFormattedMonth();
         String outputDir = System.getProperty("user.home") + java.io.File.separator + "SalarySlips"

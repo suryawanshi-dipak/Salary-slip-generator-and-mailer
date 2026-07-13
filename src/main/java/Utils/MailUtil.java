@@ -229,17 +229,6 @@ public class MailUtil {
             return false;
         }
 
-        String formattedDoj = doj;
-        try {
-            java.time.format.DateTimeFormatter inFormat = java.time.format.DateTimeFormatter.ofPattern("dd-MMM-yy",
-                    java.util.Locale.ENGLISH);
-            java.time.format.DateTimeFormatter outFormat = java.time.format.DateTimeFormatter.ofPattern("ddMMyyyy");
-            java.time.LocalDate date = java.time.LocalDate.parse(doj, inFormat);
-            formattedDoj = date.format(outFormat);
-        } catch (Exception ex) {
-            Utils.LogUtils.warn("Could not parse DOJ for email password check: {} for employee ID: {}", doj, empId);
-        }
-
         String subject = "Salary Slip for " + month;
         String bodyText = "Dear " + name + ",\n\n"
                 + "Please find attached your salary slip for " + month + ".\n\n"
