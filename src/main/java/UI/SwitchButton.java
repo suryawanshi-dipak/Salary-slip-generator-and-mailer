@@ -10,7 +10,7 @@ import java.awt.*;
  * - A circular white slider knob
  */
 public class SwitchButton extends JToggleButton {
-    private final Color colorOn = new Color(147, 51, 234); // Beautiful purple matching the image
+    private final Color colorOn = new Color(59, 130, 246); // Beautiful blue
     private final Color colorOff = new Color(156, 163, 175); // Slate grey for high contrast when OFF
     
     public SwitchButton() {

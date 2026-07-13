@@ -228,8 +228,8 @@ public class SalarySlipGenerator extends JFrame {
 
 
 
-        // Upload Excel Button
-        right.add(makeHeaderButton("\uE898", "Upload Excel", UPLOAD_GREEN, WHITE,
+        // Upload CSV Button
+        right.add(makeHeaderButton("\uE898", "Upload CSV", UPLOAD_GREEN, WHITE,
                 e -> {
                     JFileChooser chooser = new JFileChooser();
                     chooser.setDialogTitle("Select Payroll CSV File");
@@ -430,6 +430,10 @@ public class SalarySlipGenerator extends JFrame {
         dialog.add(bottomPanel, BorderLayout.SOUTH);
 
         dialog.setVisible(true);
+    }
+
+    private void showWarningDialog() {
+        JOptionPane.showMessageDialog(this, "No warnings to display.", "View Warnings", JOptionPane.WARNING_MESSAGE);
     }
 
     /**
@@ -645,12 +649,61 @@ public class SalarySlipGenerator extends JFrame {
             document.close();
 
             JDialog previewDialog = new JDialog(this, "PDF Preview", true);
-            previewDialog.setSize(800, 1000);
-            previewDialog.setLocationRelativeTo(this);
+            previewDialog.setSize(550, 650); // Smaller window size
+            previewDialog.setLocationRelativeTo(null); // Center on screen
+            previewDialog.setLayout(new BorderLayout(10, 10));
+            previewDialog.getContentPane().setBackground(BG);
 
-            JLabel imageLabel = new JLabel(new ImageIcon(bim));
+            // Top Panel
+            JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
+            topPanel.setOpaque(false);
+            JLabel selectLbl = new JLabel("Previewing File: " + new java.io.File(pdfPath).getName());
+            selectLbl.setFont(FONT_BOLD);
+            selectLbl.setForeground(TEXT_HEADING);
+            topPanel.add(selectLbl);
+
+            // Scale image to fit within the smaller window (e.g. 500px height)
+            final int baseHeight = 500;
+            final double[] zoomFactor = {1.0};
+            java.awt.Image scaledImage = bim.getScaledInstance(-1, baseHeight, java.awt.Image.SCALE_SMOOTH);
+
+            // Center Image
+            JLabel imageLabel = new JLabel(new ImageIcon(scaledImage));
+            imageLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            imageLabel.setVerticalAlignment(SwingConstants.CENTER);
+            
+            // Add zoom functionality
+            imageLabel.addMouseWheelListener(e -> {
+                if (e.isControlDown()) {
+                    if (e.getWheelRotation() < 0) {
+                        zoomFactor[0] *= 1.1; // Zoom in
+                    } else {
+                        zoomFactor[0] /= 1.1; // Zoom out
+                    }
+                    int newHeight = (int) (baseHeight * zoomFactor[0]);
+                    // Limit zoom
+                    if (newHeight > 100 && newHeight < 5000) {
+                        java.awt.Image newImage = bim.getScaledInstance(-1, newHeight, java.awt.Image.SCALE_FAST);
+                        imageLabel.setIcon(new ImageIcon(newImage));
+                        imageLabel.revalidate();
+                        imageLabel.repaint();
+                    }
+                }
+            });
+
             JScrollPane scrollPane = new JScrollPane(imageLabel);
-            previewDialog.add(scrollPane);
+            // Increase scroll speed
+            scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+            scrollPane.setBorder(BorderFactory.createLineBorder(new Color(218, 224, 233)));
+            
+            JPanel centerPanel = new JPanel(new BorderLayout());
+            centerPanel.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10));
+            centerPanel.setOpaque(false);
+            centerPanel.add(scrollPane, BorderLayout.CENTER);
+
+            previewDialog.add(topPanel, BorderLayout.NORTH);
+            previewDialog.add(centerPanel, BorderLayout.CENTER);
+
             previewDialog.setVisible(true);
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(this, "Error rendering PDF preview: " + ex.getMessage(), "Error",
@@ -972,7 +1025,19 @@ public class SalarySlipGenerator extends JFrame {
         row2.add(Box.createHorizontalStrut(14));
 
         // View Log Button
-        row2.add(makeSmallButton("\uE9F9", "View Log", BLUE_MID, WHITE, ev -> showLogDialog()));
+        JButton viewLogBtn = makeSmallButton("\uE9F9", "View Log", BLUE_MID, WHITE, ev -> showLogDialog());
+        viewLogBtn.setPreferredSize(new Dimension(90, 30)); // Increased height
+        viewLogBtn.setFont(new Font("Segoe UI", Font.BOLD, 12)); // Changed font
+        row2.add(viewLogBtn);
+
+        // Horizontal spacing between View Log and View Warning
+        row2.add(Box.createHorizontalStrut(14));
+
+        // View Warning Button
+        JButton viewWarningBtn = makeSmallButton("\uE7BA", "View Warning", RED, WHITE, ev -> showWarningDialog());
+        viewWarningBtn.setPreferredSize(new Dimension(120, 30)); // Matched height, wider for text
+        viewWarningBtn.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        row2.add(viewWarningBtn);
 
         bottomPanel.add(row1);
         bottomPanel.add(row2);
