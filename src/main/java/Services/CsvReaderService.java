@@ -4,7 +4,7 @@ import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.List;
+import java.util.List;  
 
 
 /**
@@ -63,23 +63,28 @@ public class CsvReaderService {
         List<String> errors = new ArrayList<>();
 
         try (BufferedReader br = new BufferedReader(new FileReader(filePath))) {
+            Utils.LogUtils.debug("CSV file opened successfully.");
             String line;
             boolean isFirstLine = true;
             int rowNum = 0;
 
             while ((line = br.readLine()) != null) {
+                
                 rowNum++;
-
+                Utils.LogUtils.debug("Reading row number {}", rowNum);
                 if (line.trim().isEmpty()) {
-                    continue;
-                }
+    Utils.LogUtils.debug("Skipping empty row {}", rowNum);
+    continue;
+}
 
                 if (isFirstLine) {
-                    isFirstLine = false;
-                    continue;
-                }
+    Utils.LogUtils.info("CSV header detected. Skipping header row.");
+    isFirstLine = false;
+    continue;
+}
 
                 String[] cols = line.split(",");
+                Utils.LogUtils.debug("Row {} contains {} columns.", rowNum, cols.length);
                 rawRows.add(cols);
 
                 String empId = cols.length > 1 ? cols[1].trim() : "";
@@ -87,6 +92,12 @@ public class CsvReaderService {
                 String rawBasic = cols.length > 4 ? cols[4].trim() : "";
                 String rawNet = cols.length > 19 ? cols[19].trim() : "";
                 String email = cols.length > 21 ? cols[21].trim() : "";
+                Utils.LogUtils.debug(
+    "Processing Employee ID: {}, Name: {}, Email: {}",
+    empId,
+    name,
+    email
+);
 
                 // WARN level: Bad user input or soft data issues that don't crash the app
                 if (empId.isEmpty()) {
@@ -119,9 +130,19 @@ public class CsvReaderService {
                     errors.add(err);
                     Utils.LogUtils.warn("CSV Parse Warning - {}", err);
                 }
+               Utils.LogUtils.debug(
+    "Validation completed for Employee ID {}",
+    empId
+);
 
                 String basicSalary = "\u20B9" + rawBasic;
                 String netSalary = "\u20B9" + rawNet;
+                Utils.LogUtils.debug(
+    "Formatted salaries for Employee {}. Basic={}, Net={}",
+    empId,
+    basicSalary,
+    netSalary
+);
 
                 String department = "General";
                 String month = "June 2026";
@@ -140,18 +161,26 @@ public class CsvReaderService {
                         mailStatus,
                         action
                 };
-
+                Utils.LogUtils.debug(
+    "Adding Employee {} to table model.",
+    empId
+);
                 rows.add(rowData);
+                Utils.LogUtils.debug(
+    "Employee {} added to parsed data list.",
+    empId
+);
             }
             Utils.LogUtils.info("Finished parsing CSV file: {}. Loaded {} rows successfully. Validation errors found: {}",
                     filePath, rows.size(), errors.size());
+            
 
         } catch (IOException e) {
             // ERROR level: Fatal system failures or file loading blockages
             Utils.LogUtils.error("Error reading CSV file {}: {}", filePath, e.getMessage(), e);
             throw e;
         }
-
+        
         return new CsvParseResult(rows.toArray(new Object[0][]), rawRows, errors);
     }
 }
