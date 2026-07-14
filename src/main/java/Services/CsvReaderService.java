@@ -276,21 +276,42 @@ public class CsvReaderService {
                 }
                 
                 // Validate presence of essential fields
+                String rawName = safeGet(cols, columnMap, "name");
+                String rawBasic = safeGet(cols, columnMap, "basic");
+                String rawTotalBasic = safeGet(cols, columnMap, "total basic");
+                String rawNetSalary = safeGet(cols, columnMap, "net salary");
+                String rawDesignation = safeGet(cols, columnMap, "designation");
+
                 if (emp.eCode.isEmpty()) {
                     String err = "Row " + rowNum + ": Missing Employee ID.";
                     errors.add(err);
                     Utils.LogUtils.warn("CSV Parse Warning - {}", err);
                 }
+                if (rawName.isEmpty()) {
+                    String err = "Row " + rowNum + ": Missing Employee Name for E.Code " + emp.eCode;
+                    errors.add(err);
+                    Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
+                }
+                if (rawBasic.isEmpty() && rawTotalBasic.isEmpty()) {
+                    String err = "Row " + rowNum + ": Missing Basic Salary for E.Code " + emp.eCode;
+                    errors.add(err);
+                    Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
+                }
+                if (rawNetSalary.isEmpty()) {
+                    String err = "Row " + rowNum + ": Missing Net Salary for E.Code " + emp.eCode;
+                    errors.add(err);
+                    Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
+                }
                 if (emp.email.isEmpty() || !emp.email.contains("@")) {
                     String err = "Row " + rowNum + ": Missing or invalid Email for E.Code " + emp.eCode;
                     errors.add(err);
-                    Utils.LogUtils.warn("CSV Parse Warning - {}", err);
+                    Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
                 }
-                // if (emp.designation.isEmpty()) {
-                //     String err = "Row " + rowNum + ": Missing Designation for E.Code " + emp.eCode;
-                //     errors.add(err);
-                //     Utils.LogUtils.warn("CSV Parse Warning - {}", err);
-                // }
+                if (rawDesignation.isEmpty()) {
+                    String err = "Row " + rowNum + ": Missing Designation for E.Code " + emp.eCode;
+                    errors.add(err);
+                    Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
+                }
 
                 // Reconciliation check
                 int totalBasic = parseInteger(emp.totalBasic);
@@ -316,9 +337,34 @@ public class CsvReaderService {
                 int netPay = parseInteger(emp.netPay);
                 
                 // --- 4 Identities Arithmetic Reconciliation (FR-03 & FR-22) ---
-                // Disabled these soft warnings for demo format flexibility.
-                // The demo CSV has mathematical rounding inconsistencies (e.g. 43751 - 200 = 43551, but lists 43550)
-                // which causes these to annoy the user unnecessarily.
+                // Re-enabled these warnings with a small tolerance (2) for rounding inconsistencies.
+                int calculatedGross = totalBasic + totalHra + totalSplAllowance + totalKra;
+                if (Math.abs(grossSalary - calculatedGross) > 2) {
+                    String err = "Row " + rowNum + ": Gross Salary mismatch for E.Code " + emp.eCode + " (Calc: " + calculatedGross + ", Found: " + grossSalary + ")";
+                    errors.add(err);
+                    Utils.LogUtils.logHrWarning("Reconciliation Warning - " + err);
+                }
+
+                int calculatedNetSalary = basic + hra + splAllowance + kra + performanceBonus + officeExpense + leavePayment;
+                if (Math.abs(netSalary - calculatedNetSalary) > 2) {
+                    String err = "Row " + rowNum + ": Net Salary mismatch for E.Code " + emp.eCode + " (Calc: " + calculatedNetSalary + ", Found: " + netSalary + ")";
+                    errors.add(err);
+                    Utils.LogUtils.logHrWarning("Reconciliation Warning - " + err);
+                }
+
+                int calculatedDeduction = pt + loanDeducted + tds;
+                if (Math.abs(totalDeduction - calculatedDeduction) > 2) {
+                    String err = "Row " + rowNum + ": Total Deduction mismatch for E.Code " + emp.eCode + " (Calc: " + calculatedDeduction + ", Found: " + totalDeduction + ")";
+                    errors.add(err);
+                    Utils.LogUtils.logHrWarning("Reconciliation Warning - " + err);
+                }
+
+                int calculatedNetPay = netSalary - totalDeduction;
+                if (Math.abs(netPay - calculatedNetPay) > 2) {
+                    String err = "Row " + rowNum + ": Net Pay mismatch for E.Code " + emp.eCode + " (Calc: " + calculatedNetPay + ", Found: " + netPay + ")";
+                    errors.add(err);
+                    Utils.LogUtils.logHrWarning("Reconciliation Warning - " + err);
+                }
 
                 // --- UI Display Data Preparation ---
                 String basicSalaryUI = "\u20B9" + parseInteger(emp.totalBasic);

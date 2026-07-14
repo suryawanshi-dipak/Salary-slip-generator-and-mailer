@@ -14,24 +14,37 @@ public class LogUtils {
     private static final DateTimeFormatter FILE_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
     
     private static java.io.PrintWriter fileWriter;
+    private static java.io.PrintWriter hrFileWriter;
 
     static {
         try {
-            java.io.File logDir = new java.io.File("logs");
-            if (!logDir.exists()) {
-                logDir.mkdirs();
+            java.io.File devLogDir = new java.io.File("Logs/Developer_Logs");
+            if (!devLogDir.exists()) {
+                devLogDir.mkdirs();
             }
-            String fileName = "logs/app-" + LocalDateTime.now().format(FILE_DATE_FORMATTER) + ".log";
-            fileWriter = new java.io.PrintWriter(new java.io.FileWriter(fileName, true), true);
+            java.io.File hrLogDir = new java.io.File("Logs/HR_Logs");
+            if (!hrLogDir.exists()) {
+                hrLogDir.mkdirs();
+            }
             
-            // Add a shutdown hook to close the writer gracefully
+            String timestamp = LocalDateTime.now().format(FILE_DATE_FORMATTER);
+            String devFileName = "Logs/Developer_Logs/app-" + timestamp + ".log";
+            String hrFileName = "Logs/HR_Logs/hr_warnings-" + timestamp + ".log";
+            
+            fileWriter = new java.io.PrintWriter(new java.io.FileWriter(devFileName, true), true);
+            hrFileWriter = new java.io.PrintWriter(new java.io.FileWriter(hrFileName, true), true);
+            
+            // Add a shutdown hook to close the writers gracefully
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 if (fileWriter != null) {
                     fileWriter.close();
                 }
+                if (hrFileWriter != null) {
+                    hrFileWriter.close();
+                }
             }));
         } catch (java.io.IOException e) {
-            System.err.println("Could not initialize LogUtils file writer: " + e.getMessage());
+            System.err.println("Could not initialize LogUtils file writers: " + e.getMessage());
         }
     }
 
@@ -132,6 +145,18 @@ public class LogUtils {
      */
     public static void warn(String format, Object... arguments) {
         log("WARN", formatMessage(format, arguments));
+    }
+
+    /**
+     * Logs a plain-English warning message to the HR logs directory.
+     * 
+     * @param message The warning message string to be logged.
+     */
+    public static void logHrWarning(String message) {
+        if (hrFileWriter != null) {
+            String timestamp = LocalDateTime.now().format(FORMATTER);
+            hrFileWriter.println(String.format("[%s] HR WARNING: %s", timestamp, message));
+        }
     }
 
     /**

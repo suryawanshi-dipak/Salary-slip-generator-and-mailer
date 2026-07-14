@@ -21,6 +21,8 @@ import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.util.ArrayList;
+import java.util.List;
 
 import javax.swing.AbstractCellEditor;
 import javax.swing.BorderFactory;
@@ -94,6 +96,7 @@ public class SalarySlipGenerator extends JFrame {
     // Text colors
     private static final Color TEXT_HEADING = new Color(23, 52, 99);
     private static final Color TEXT_MUTED = new Color(119, 119, 119);
+    private static final Color TEXT_BODY = new Color(51, 65, 85);
 
     // Status and action colors
     private static final Color GREEN = new Color(22, 163, 74);
@@ -101,6 +104,7 @@ public class SalarySlipGenerator extends JFrame {
     private static final Color ORANGE = new Color(217, 119, 6);
     private static final Color RED = new Color(220, 38, 38);
     private static final Color BLUE_MID = new Color(37, 99, 235);
+    private static final Color BLUE_LIGHT = new Color(219, 234, 254);
     private static final Color UPLOAD_GREEN = new Color(24, 184, 111);
 
     // Table styling colors
@@ -131,6 +135,24 @@ public class SalarySlipGenerator extends JFrame {
     private String[] cols = { "Emp ID", "Employee Name", "Department",
             "Basic Salary", "Net Salary", "Month",
             "Slip Status", "Mail Status", "Action" };
+
+    // --------------------------------------------------------
+    // HR Failed Records Data
+    // --------------------------------------------------------
+    public static class FailedRecord {
+        public String eCode;
+        public String name;
+        public String reason;
+        public String action;
+
+        public FailedRecord(String eCode, String name, String reason, String action) {
+            this.eCode = eCode;
+            this.name = name;
+            this.reason = reason;
+            this.action = action;
+        }
+    }
+    public static List<FailedRecord> failedRecords = new ArrayList<>();
 
     // --------------------------------------------------------
     // Core UI Components
@@ -251,15 +273,10 @@ public class SalarySlipGenerator extends JFrame {
 
                             // Check if validation found any errors (e.g. missing IDs, missing names)
                             if (!result.errors.isEmpty()) {
-                                // Display error report dialog
-                                JTextArea textArea = new JTextArea(12, 50);
-                                textArea.setText(String.join("\n", result.errors));
-                                textArea.setEditable(false);
-                                textArea.setFont(new Font("Monospaced", Font.PLAIN, 13));
-                                JScrollPane scrollPane = new JScrollPane(textArea);
-
-                                JOptionPane.showMessageDialog(this, scrollPane, "CSV Validation Report - Issues Found",
-                                        JOptionPane.WARNING_MESSAGE);
+                                for (String err : result.errors) {
+                                    failedRecords.add(new FailedRecord("Unknown", "Unknown", err, "Correct CSV data"));
+                                }
+                                showFailedRecordsDialog();
                             } else {
                                 JOptionPane.showMessageDialog(this,
                                         "Data loaded successfully from CSV! No errors found.", "Success",
@@ -288,6 +305,7 @@ public class SalarySlipGenerator extends JFrame {
                     String outputDir = System.getProperty("user.home") + java.io.File.separator + "SalarySlips"
                             + java.io.File.separator + formattedMonth;
                     int successCount = 0;
+                    int failCount = 0;
 
                     for (int i = 0; i < currentRawCsvData.size(); i++) {
                         Services.CsvReaderService.EmployeeSalary emp = currentRawCsvData.get(i);
@@ -298,19 +316,46 @@ public class SalarySlipGenerator extends JFrame {
                         String empId = emp.eCode.trim();
                         String filename = empId + "_" + formattedMonth + ".pdf";
 
-                        String path = Utils.PdfUtil.generateSalarySlip(emp, outputDir, formattedMonth, filename);
-                        if (path != null) {
-                            successCount++;
-                            if (i < model.getRowCount()) {
-                                model.setValueAt("Generated", i, 6); // Update slip status
+                        try {
+                            String path = Utils.PdfUtil.generateSalarySlip(emp, outputDir, formattedMonth, filename);
+                            if (path != null) {
+                                successCount++;
+                                if (i < model.getRowCount()) {
+                                    model.setValueAt("Generated", i, 6); // Update slip status
+                                }
+                            } else {
+                                failCount++;
+                                failedRecords.add(new FailedRecord(empId, emp.name, "PDF Generation returned null", "Check Logs"));
                             }
+                        } catch (Exception ex) {
+                            failCount++;
+                            failedRecords.add(new FailedRecord(empId, emp.name, "PDF Error: " + ex.getMessage(), "Check PDF templates or permissions"));
                         }
                     }
                     updateDashboardStats();
 
-                    JOptionPane.showMessageDialog(this,
-                            "Successfully generated " + successCount + " salary slips!\nSaved to: " + outputDir,
-                            "Generation Complete", JOptionPane.INFORMATION_MESSAGE);
+                    if (failCount > 0) {
+                        JPanel p = new JPanel(new BorderLayout(15, 0));
+                        JLabel icon = new JLabel("\uE7BA");
+                        icon.setFont(new Font("Segoe MDL2 Assets", Font.PLAIN, 40));
+                        icon.setForeground(ORANGE);
+                        p.add(icon, BorderLayout.WEST);
+                        JLabel msg = new JLabel("<html><h3 style='margin:0; padding:0; color:#173463;'>Generation Completed with Errors</h3><p style='margin-top:8px;'>Successfully generated: <b>" + successCount + "</b> slips</p><p style='color:#dc2626;'>Failed to generate: <b>" + failCount + "</b> slips</p><br><p style='color:#777777;'>Opening HR Failed Records for details...</p></html>");
+                        msg.setFont(FONT);
+                        p.add(msg, BorderLayout.CENTER);
+                        JOptionPane.showMessageDialog(this, p, "Generation Result", JOptionPane.PLAIN_MESSAGE);
+                        showFailedRecordsDialog();
+                    } else {
+                        JPanel p = new JPanel(new BorderLayout(15, 0));
+                        JLabel icon = new JLabel("\uE73E");
+                        icon.setFont(new Font("Segoe MDL2 Assets", Font.PLAIN, 40));
+                        icon.setForeground(GREEN);
+                        p.add(icon, BorderLayout.WEST);
+                        JLabel msg = new JLabel("<html><h3 style='margin:0; padding:0; color:#173463;'>Generation Successful!</h3><p style='margin-top:8px;'>Successfully generated <b>" + successCount + "</b> salary slips.</p><br><p style='color:#777777;'>Saved to:<br>" + outputDir + "</p></html>");
+                        msg.setFont(FONT);
+                        p.add(msg, BorderLayout.CENTER);
+                        JOptionPane.showMessageDialog(this, p, "Generation Result", JOptionPane.PLAIN_MESSAGE);
+                    }
                 }));
 
         header.add(left, BorderLayout.WEST);
@@ -319,12 +364,11 @@ public class SalarySlipGenerator extends JFrame {
     }
 
     /**
-     * Opens a stylized scrollable dialog showing run logs from the 'Logs/'
-     * directory.
+     * Opens a stylized scrollable dialog showing run logs from a specified directory.
      * Includes options to switch between different log files, refresh contents,
      * and open logs in the system editor.
      */
-    private void showLogDialog() {
+    private void showLogDialog(String targetDir) {
         JDialog dialog = new JDialog(this, "Application Run Logs", true);
         dialog.setSize(650, 480);
         dialog.setLocationRelativeTo(this);
@@ -345,10 +389,11 @@ public class SalarySlipGenerator extends JFrame {
         topPanel.add(logFilesCombo);
 
         // Find available log files
-        java.io.File logDir = new java.io.File("Logs");
+        java.io.File logDir = new java.io.File(targetDir);
         if (logDir.exists() && logDir.isDirectory()) {
             java.io.File[] files = logDir.listFiles((dir, name) -> name.endsWith(".log"));
-            if (files != null) {
+            if (files != null && files.length > 0) {
+                java.util.Arrays.sort(files, (f1, f2) -> Long.compare(f2.lastModified(), f1.lastModified()));
                 for (java.io.File file : files) {
                     logFilesCombo.addItem(file.getName());
                 }
@@ -435,8 +480,111 @@ public class SalarySlipGenerator extends JFrame {
         dialog.setVisible(true);
     }
 
-    private void showWarningDialog() {
-        JOptionPane.showMessageDialog(this, "No warnings to display.", "View Warnings", JOptionPane.WARNING_MESSAGE);
+    private void showFailedRecordsDialog() {
+        JDialog dialog = new JDialog(this, "HR Failed Records", true);
+        dialog.setSize(800, 500);
+        dialog.setLocationRelativeTo(this);
+        dialog.setLayout(new BorderLayout(10, 10));
+        dialog.getContentPane().setBackground(BG);
+
+        // Top Panel
+        JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
+        topPanel.setOpaque(false);
+        JLabel titleLbl = new JLabel("Failed Records Report");
+        titleLbl.setFont(FONT_HEADING);
+        titleLbl.setForeground(TEXT_HEADING);
+        topPanel.add(titleLbl);
+        
+        // Table Model
+        String[] columns = {"Employee ID", "Name", "Reason for Failure", "Suggested Action"};
+        DefaultTableModel errModel = new DefaultTableModel(columns, 0) {
+            public boolean isCellEditable(int row, int column) { return false; }
+        };
+        for (FailedRecord fr : failedRecords) {
+            errModel.addRow(new Object[]{fr.eCode, fr.name, fr.reason, fr.action});
+        }
+        
+        JTable errTable = new JTable(errModel);
+        errTable.setRowHeight(35);
+        errTable.setFont(FONT_TABLE_CELL);
+        errTable.getTableHeader().setFont(FONT_TABLE_HEAD);
+        errTable.getTableHeader().setBackground(TABLE_HEADER_BG);
+        errTable.getTableHeader().setForeground(WHITE);
+        errTable.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+            public Component getTableCellRendererComponent(JTable t, Object val,
+                    boolean sel, boolean foc, int row, int col) {
+                Component c = super.getTableCellRendererComponent(t, val, sel, foc, row, col);
+                if (c instanceof JLabel) {
+                    ((JLabel) c).setBorder(BorderFactory.createEmptyBorder(0, 8, 0, 8));
+                    if (col == 2) c.setForeground(RED);
+                    else c.setForeground(TEXT_BODY);
+                }
+                return c;
+            }
+        });
+        
+        JScrollPane scrollPane = new JScrollPane(errTable);
+        
+        // Bottom Panel
+        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        bottomPanel.setOpaque(false);
+        
+        JButton refreshBtn = new JButton("Refresh");
+        refreshBtn.setFont(FONT_BOLD);
+        refreshBtn.addActionListener(e -> {
+            errModel.setRowCount(0);
+            for (FailedRecord fr : failedRecords) {
+                errModel.addRow(new Object[]{fr.eCode, fr.name, fr.reason, fr.action});
+            }
+        });
+        
+        JButton exportBtn = new JButton("Export CSV");
+        exportBtn.setFont(FONT_BOLD);
+        exportBtn.addActionListener(e -> {
+            try {
+                java.io.File file = new java.io.File("FailedRecordsExport.csv");
+                java.io.PrintWriter pw = new java.io.PrintWriter(file);
+                pw.println("Employee ID,Name,Reason,Action");
+                for (FailedRecord fr : failedRecords) {
+                    pw.println(fr.eCode + "," + fr.name + "," + fr.reason + "," + fr.action);
+                }
+                pw.close();
+                JOptionPane.showMessageDialog(dialog, "Exported to " + file.getAbsolutePath());
+            } catch (Exception ex) {}
+        });
+        
+        JButton closeBtn = new JButton("Close");
+        closeBtn.setFont(FONT_BOLD);
+        closeBtn.addActionListener(e -> dialog.dispose());
+        
+        bottomPanel.add(refreshBtn);
+        bottomPanel.add(exportBtn);
+        bottomPanel.add(closeBtn);
+        
+        dialog.add(topPanel, BorderLayout.NORTH);
+        dialog.add(scrollPane, BorderLayout.CENTER);
+        dialog.add(bottomPanel, BorderLayout.SOUTH);
+        
+        if (failedRecords.isEmpty()) {
+            // Show green checkmark success screen
+            JPanel successPanel = new JPanel(new BorderLayout());
+            successPanel.setOpaque(false);
+            JLabel check = new JLabel("\uE73E");
+            check.setFont(new Font("Segoe MDL2 Assets", Font.PLAIN, 100));
+            check.setForeground(GREEN);
+            check.setHorizontalAlignment(SwingConstants.CENTER);
+            JLabel msg = new JLabel("No Errors Found!");
+            msg.setFont(FONT_HEADING);
+            msg.setForeground(GREEN);
+            msg.setHorizontalAlignment(SwingConstants.CENTER);
+            successPanel.add(check, BorderLayout.CENTER);
+            successPanel.add(msg, BorderLayout.SOUTH);
+            
+            dialog.remove(scrollPane);
+            dialog.add(successPanel, BorderLayout.CENTER);
+        }
+        
+        dialog.setVisible(true);
     }
 
     /**
@@ -1014,10 +1162,28 @@ public class SalarySlipGenerator extends JFrame {
             }
 
             updateDashboardStats();
-            JOptionPane.showMessageDialog(card,
-                    "Batch send complete.\nSent: " + totalSent + "\nFailed: " + totalFailed
-                            + "\nSkipped (Already Sent): " + totalSkipped,
-                    "Send Mail", JOptionPane.INFORMATION_MESSAGE);
+            if (totalFailed > 0) {
+                JPanel p = new JPanel(new BorderLayout(15, 0));
+                JLabel icon = new JLabel("\uE7BA");
+                icon.setFont(new Font("Segoe MDL2 Assets", Font.PLAIN, 40));
+                icon.setForeground(ORANGE);
+                p.add(icon, BorderLayout.WEST);
+                JLabel msg = new JLabel("<html><h3 style='margin:0; padding:0; color:#173463;'>Batch Send Completed with Errors</h3><p style='margin-top:8px;'>Sent: <b>" + totalSent + "</b> mails</p><p>Skipped (Already Sent): <b>" + totalSkipped + "</b></p><p style='color:#dc2626;'>Failed to send: <b>" + totalFailed + "</b> mails</p><br><p style='color:#777777;'>Opening HR Failed Records for details...</p></html>");
+                msg.setFont(FONT);
+                p.add(msg, BorderLayout.CENTER);
+                JOptionPane.showMessageDialog(card, p, "Send Mail Result", JOptionPane.PLAIN_MESSAGE);
+                showFailedRecordsDialog();
+            } else {
+                JPanel p = new JPanel(new BorderLayout(15, 0));
+                JLabel icon = new JLabel("\uE73E");
+                icon.setFont(new Font("Segoe MDL2 Assets", Font.PLAIN, 40));
+                icon.setForeground(GREEN);
+                p.add(icon, BorderLayout.WEST);
+                JLabel msg = new JLabel("<html><h3 style='margin:0; padding:0; color:#173463;'>Batch Send Successful!</h3><p style='margin-top:8px;'>Successfully sent: <b>" + totalSent + "</b> mails.</p><p>Skipped (Already Sent): <b>" + totalSkipped + "</b></p></html>");
+                msg.setFont(FONT);
+                p.add(msg, BorderLayout.CENTER);
+                JOptionPane.showMessageDialog(card, p, "Send Mail Result", JOptionPane.PLAIN_MESSAGE);
+            }
         });
 
         // Button hover effect
@@ -1049,7 +1215,7 @@ public class SalarySlipGenerator extends JFrame {
         row2.add(Box.createHorizontalStrut(14));
 
         // View Log Button
-        JButton viewLogBtn = makeSmallButton("\uE9F9", "View Log", BLUE_MID, WHITE, ev -> showLogDialog());
+        JButton viewLogBtn = makeSmallButton("\uE9F9", "View Log", BLUE_MID, WHITE, ev -> showLogDialog("Logs/Developer_Logs"));
         viewLogBtn.setPreferredSize(new Dimension(90, 30)); // Increased height
         viewLogBtn.setFont(new Font("Segoe UI", Font.BOLD, 12)); // Changed font
         row2.add(viewLogBtn);
@@ -1058,7 +1224,7 @@ public class SalarySlipGenerator extends JFrame {
         row2.add(Box.createHorizontalStrut(14));
 
         // View Warning Button
-        JButton viewWarningBtn = makeSmallButton("\uE7BA", "View Warning", RED, WHITE, ev -> showWarningDialog());
+        JButton viewWarningBtn = makeSmallButton("\uE7BA", "View Warning", RED, WHITE, ev -> showLogDialog("Logs/HR_Logs"));
         viewWarningBtn.setPreferredSize(new Dimension(120, 30)); // Matched height, wider for text
         viewWarningBtn.setFont(new Font("Segoe UI", Font.BOLD, 12));
         row2.add(viewWarningBtn);
@@ -1412,8 +1578,16 @@ public class SalarySlipGenerator extends JFrame {
         String filename = empId + "_" + formattedMonth + ".pdf";
         java.io.File pdfFile = new java.io.File(outputDir, filename);
 
-        return Utils.MailUtil.sendAndTrackSlip(empId, formattedMonth, email, name, doj, pdfFile.getAbsolutePath(),
-                smtpPassword);
+        try {
+            boolean success = Utils.MailUtil.sendAndTrackSlip(empId, formattedMonth, email, name, doj, pdfFile.getAbsolutePath(), smtpPassword);
+            if (!success) {
+                failedRecords.add(new FailedRecord(empId, name, "Email sending failed", "Verify email/SMTP"));
+            }
+            return success;
+        } catch (Exception ex) {
+            failedRecords.add(new FailedRecord(empId, name, "Email Error: " + ex.getMessage(), "Verify email/SMTP"));
+            return false;
+        }
     }
 
     /* ===================== MAIN ===================== */
