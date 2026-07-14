@@ -170,6 +170,7 @@ public class SalarySlipGenerator extends JFrame {
 
     /** Dropdown combo box to filter the table by payroll month */
     private JComboBox<String> monthCombo;
+    private JLabel payrollMonthLabel;
 
     /** In-memory storage for SMTP password, pre-loaded from smtp.properties */
     private String smtpPassword = Utils.MailUtil.getSmtpPass();
@@ -216,6 +217,71 @@ public class SalarySlipGenerator extends JFrame {
 
     /* ===================== HEADER ===================== */
     private java.util.List<Services.CsvReaderService.EmployeeSalary> currentRawCsvData = new java.util.ArrayList<>();
+    private String lastUploadedCsvPath = null;
+
+    private void loadCsvData(String filePath) {
+        try {
+            Utils.LogUtils.info("User loading CSV file: {}", filePath);
+            Services.CsvReaderService.CsvParseResult result = Services.CsvReaderService
+                    .parsePayrollCsv(filePath);
+
+            Utils.LogUtils.info("CSV parsed successfully. Total Employees: {}", result.employees.size());
+
+            // Store the raw data for PDF Generation
+            currentRawCsvData = result.employees;
+
+            if (!currentRawCsvData.isEmpty()) {
+                String fileMonth = currentRawCsvData.get(0).month;
+                String fullMonth = formatMonthFull(fileMonth);
+                
+                monthCombo.removeAllItems();
+                monthCombo.addItem(fullMonth);
+                monthCombo.setSelectedItem(fullMonth);
+            }
+
+            // Clear existing table data and inject parsed CSV rows
+            model.setRowCount(0);
+            for (Object[] row : result.rows) {
+                model.addRow(row);
+            }
+
+            updateDashboardStats();
+
+            // Check if validation found any errors
+            if (!result.errors.isEmpty()) {
+                Utils.LogUtils.warn("CSV validation completed with {} errors.", result.errors.size());
+
+                for (Services.CsvReaderService.CsvError err : result.errors) {
+                    String empId = (err.eCode == null || err.eCode.isEmpty()) ? "Unknown" : err.eCode;
+                    String empName = (err.name == null || err.name.isEmpty()) ? "Unknown" : err.name;
+                    failedRecords.add(new FailedRecord(empId, empName, err.reason, "Correct CSV data"));
+                }
+
+                showFailedRecordsDialog();
+            } else {
+                Utils.LogUtils.info("CSV uploaded without validation errors.");
+
+                JOptionPane.showMessageDialog(this,
+                        "Data loaded successfully from CSV! No errors found.",
+                        "Success",
+                        JOptionPane.INFORMATION_MESSAGE);
+            }
+        } catch (IllegalArgumentException ex) {
+            Utils.LogUtils.error("CSV validation failed: {}", ex.getMessage(), ex);
+
+            JOptionPane.showMessageDialog(this,
+                    "CSV Validation Failed: " + ex.getMessage(),
+                    "Validation Error",
+                    JOptionPane.ERROR_MESSAGE);
+        } catch (Exception ex) {
+            Utils.LogUtils.error("Error while uploading CSV: {}", ex.getMessage(), ex);
+
+            JOptionPane.showMessageDialog(this,
+                    "Error reading file: " + ex.getMessage(),
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE);
+        }
+    }
 
     /**
      * Builds the top header panel including the logo, title, and action buttons.
@@ -249,6 +315,22 @@ public class SalarySlipGenerator extends JFrame {
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 14, 0));
         right.setOpaque(false);
 
+        // Refresh Button
+        JButton refreshBtn = makeHeaderButton("\uE72C", "", PRIMARY_PURPLE, WHITE,
+                e -> {
+                    if (lastUploadedCsvPath == null) {
+                        JOptionPane.showMessageDialog(this,
+                                "No CSV file has been uploaded yet.",
+                                "Warning",
+                                JOptionPane.WARNING_MESSAGE);
+                        return;
+                    }
+                    loadCsvData(lastUploadedCsvPath);
+                });
+        refreshBtn.setPreferredSize(new Dimension(42, 42));
+        refreshBtn.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
+        right.add(refreshBtn);
+
         // Upload CSV Button
         right.add(makeHeaderButton("\uE898", "Upload CSV", UPLOAD_GREEN, WHITE,
                 e -> {
@@ -257,70 +339,8 @@ public class SalarySlipGenerator extends JFrame {
                     int res = chooser.showOpenDialog(this);
 
                     if (res == JFileChooser.APPROVE_OPTION) {
-                        try {
-
-                            Utils.LogUtils.info("User selected CSV file: {}",
-                                    chooser.getSelectedFile().getAbsolutePath());
-
-                            Services.CsvReaderService.CsvParseResult result = Services.CsvReaderService
-                                    .parsePayrollCsv(chooser.getSelectedFile().getAbsolutePath());
-
-                            Utils.LogUtils.info("CSV parsed successfully. Total Employees: {}",
-                                    result.employees.size());
-
-                            // Store the raw data for PDF Generation
-                            currentRawCsvData = result.employees;
-
-                            // Clear existing table data and inject parsed CSV rows
-                            model.setRowCount(0);
-                            for (Object[] row : result.rows) {
-                                model.addRow(row);
-                            }
-
-                            updateDashboardStats();
-
-                            // Check if validation found any errors
-                            if (!result.errors.isEmpty()) {
-
-                                Utils.LogUtils.warn("CSV validation completed with {} errors.",
-                                        result.errors.size());
-
-                                for (Services.CsvReaderService.CsvError err : result.errors) {
-                                    String empId = (err.eCode == null || err.eCode.isEmpty()) ? "Unknown" : err.eCode;
-                                    String empName = (err.name == null || err.name.isEmpty()) ? "Unknown" : err.name;
-                                    failedRecords.add(new FailedRecord(empId, empName, err.reason, "Correct CSV data"));
-                                }
-
-                                showFailedRecordsDialog();
-
-                            } else {
-
-                                Utils.LogUtils.info("CSV uploaded without validation errors.");
-
-                                JOptionPane.showMessageDialog(this,
-                                        "Data loaded successfully from CSV! No errors found.",
-                                        "Success",
-                                        JOptionPane.INFORMATION_MESSAGE);
-                            }
-
-                        } catch (IllegalArgumentException ex) {
-
-                            Utils.LogUtils.error("CSV validation failed: {}", ex.getMessage(), ex);
-
-                            JOptionPane.showMessageDialog(this,
-                                    "CSV Validation Failed: " + ex.getMessage(),
-                                    "Validation Error",
-                                    JOptionPane.ERROR_MESSAGE);
-
-                        } catch (Exception ex) {
-
-                            Utils.LogUtils.error("Error while uploading CSV: {}", ex.getMessage(), ex);
-
-                            JOptionPane.showMessageDialog(this,
-                                    "Error reading file: " + ex.getMessage(),
-                                    "Error",
-                                    JOptionPane.ERROR_MESSAGE);
-                        }
+                        lastUploadedCsvPath = chooser.getSelectedFile().getAbsolutePath();
+                        loadCsvData(lastUploadedCsvPath);
                     }
                 }));
 
@@ -336,6 +356,16 @@ public class SalarySlipGenerator extends JFrame {
                     }
 
                     String formattedMonth = getFormattedMonth();
+                    String firstEmpMonth = currentRawCsvData.get(0).month;
+
+                    if (firstEmpMonth != null && !firstEmpMonth.equalsIgnoreCase(formattedMonth)) {
+                        JOptionPane.showMessageDialog(this,
+                                "Run month mismatch! Selected month (" + formattedMonth + ") does not match the CSV file's month (" + firstEmpMonth + ").\nPlease check your selection.",
+                                "Generation Blocked",
+                                JOptionPane.ERROR_MESSAGE);
+                        return;
+                    }
+
                     String outputDir = System.getProperty("user.home")
                             + java.io.File.separator + "SalarySlips"
                             + java.io.File.separator + formattedMonth;
@@ -891,6 +921,17 @@ public class SalarySlipGenerator extends JFrame {
             mailsSentCountLbl.setText(String.valueOf(sent));
     }
 
+    private String formatMonthFull(String shortMonth) {
+        try {
+            java.time.format.DateTimeFormatter in = java.time.format.DateTimeFormatter.ofPattern("MMM-yy", java.util.Locale.ENGLISH);
+            java.time.format.DateTimeFormatter out = java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy", java.util.Locale.ENGLISH);
+            java.time.YearMonth ym = java.time.YearMonth.parse(shortMonth, in);
+            return ym.format(out);
+        } catch (Exception e) {
+            return shortMonth;
+        }
+    }
+
     private String getFormattedMonth() {
         String rawMonth = (String) monthCombo.getSelectedItem();
         if (rawMonth == null)
@@ -954,7 +995,7 @@ public class SalarySlipGenerator extends JFrame {
                     int newH = (int) (bim.getHeight() * baseScale * zoomFactor[0]);
 
                     if (newW > 10 && newH > 10) {
-                        java.awt.Image newImg = bim.getScaledInstance(newW, newH, java.awt.Image.SCALE_FAST);
+                        java.awt.Image newImg = bim.getScaledInstance(newW, newH, java.awt.Image.SCALE_SMOOTH);
                         imageLabel.setIcon(new ImageIcon(newImg));
                         imageLabel.revalidate();
                         imageLabel.repaint();
@@ -1033,11 +1074,11 @@ public class SalarySlipGenerator extends JFrame {
         JLabel t = new JLabel("Employee Salary Records");
         t.setFont(FONT_HEADING);
         t.setForeground(TEXT_HEADING);
-        JLabel s = new JLabel("July 2026 Payroll");
-        s.setFont(FONT_SUB);
-        s.setForeground(TEXT_MUTED);
+        payrollMonthLabel = new JLabel("-- Payroll");
+        payrollMonthLabel.setFont(FONT_SUB);
+        payrollMonthLabel.setForeground(TEXT_MUTED);
         titleRow.add(t, BorderLayout.WEST);
-        titleRow.add(s, BorderLayout.EAST);
+        titleRow.add(payrollMonthLabel, BorderLayout.EAST);
 
         // -- Search row --
         JPanel searchRow = new JPanel(new BorderLayout(12, 0));
@@ -1086,14 +1127,19 @@ public class SalarySlipGenerator extends JFrame {
         });
 
         // Month Filter Dropdown
-        monthCombo = new JComboBox<>(new String[] { "July 2026", "June 2026", "May 2026" });
+        monthCombo = new JComboBox<>();
         monthCombo.setFont(FONT);
         monthCombo.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(221, 221, 221), 1, true),
                 BorderFactory.createEmptyBorder(10, 14, 10, 14)));
         monthCombo.setBackground(WHITE);
         monthCombo.setPreferredSize(new Dimension(200, 0));
-        monthCombo.addActionListener(e -> filterTable());
+        monthCombo.addActionListener(e -> {
+            if (monthCombo.getSelectedItem() != null) {
+                payrollMonthLabel.setText(monthCombo.getSelectedItem().toString() + " Payroll");
+            }
+            filterTable();
+        });
 
         searchRow.add(searchField, BorderLayout.CENTER);
         searchRow.add(monthCombo, BorderLayout.EAST);
@@ -1583,7 +1629,9 @@ public class SalarySlipGenerator extends JFrame {
     @SuppressWarnings("unchecked")
     private void filterTable() {
         String query = searchField.getText().toLowerCase();
-        String month = monthCombo.getSelectedItem().toString();
+        Object selectedItem = monthCombo.getSelectedItem();
+        String rawMonth = selectedItem == null ? "" : selectedItem.toString();
+        String formattedMonth = getFormattedMonth();
 
         // Define our custom filtering logic
         RowFilter<DefaultTableModel, Object> rf = new RowFilter<>() {
@@ -1594,7 +1642,7 @@ public class SalarySlipGenerator extends JFrame {
 
                 // Must match both the text search and the dropdown month selection
                 boolean matchText = name.contains(query) || id.contains(query);
-                boolean matchMonth = month.equals("All") || m.equals(month);
+                boolean matchMonth = rawMonth.equals("All") || m.equalsIgnoreCase(formattedMonth);
                 return matchText && matchMonth;
             }
         };

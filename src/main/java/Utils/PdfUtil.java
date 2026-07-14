@@ -356,22 +356,21 @@ public class PdfUtil {
             }
 
             // --- Totals Row ---
-            salaryTable.addCell(headerCell(grossSalary).setTextAlignment(TextAlignment.RIGHT)); // In v2, Gross salary
-                                                                                                // spans the "fixed"
-                                                                                                // column but
-                                                                                                // conceptually is the
-                                                                                                // total contracted
-            salaryTable.addCell(headerCell(safe(empData.netSalary)).setTextAlignment(TextAlignment.RIGHT)); // Amt.
-                                                                                                            // Payable
-                                                                                                            // total is
-                                                                                                            // netSalary
-            salaryTable.addCell(headerCell("Total Deductions"));
+            salaryTable.addCell(headerCell("").setTextAlignment(TextAlignment.LEFT));
+            salaryTable.addCell(headerCell(grossSalary).setTextAlignment(TextAlignment.RIGHT));
+            salaryTable.addCell(headerCell(safe(empData.netSalary)).setTextAlignment(TextAlignment.RIGHT));
+            salaryTable.addCell(headerCell("Total Deductions").setTextAlignment(TextAlignment.CENTER));
             salaryTable.addCell(headerCell(totalDed).setTextAlignment(TextAlignment.RIGHT));
 
-            salaryTable.addCell(new Cell(1, 3).setBorder(Border.NO_BORDER));
-            salaryTable.addCell(headerCell("NET PAY").setBackgroundColor(ColorConstants.WHITE));
-            salaryTable.addCell(
-                    headerCell(netPay).setBackgroundColor(ColorConstants.WHITE).setTextAlignment(TextAlignment.RIGHT));
+            Cell netPayLabel = new Cell(1, 2).add(new Paragraph("NET PAY"))
+                    .setBackgroundColor(ColorConstants.WHITE).setBold().setTextAlignment(TextAlignment.CENTER);
+            salaryTable.addCell(netPayLabel);
+
+            Cell netPayValue = new Cell().add(new Paragraph(netPay))
+                    .setBackgroundColor(ColorConstants.WHITE).setBold().setTextAlignment(TextAlignment.RIGHT);
+            salaryTable.addCell(netPayValue);
+
+            salaryTable.addCell(new Cell(1, 2).setBorder(Border.NO_BORDER));
 
             outerTable.addCell(new Cell().add(salaryTable).setPadding(0));
             document.add(outerTable);

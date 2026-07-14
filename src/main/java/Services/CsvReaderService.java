@@ -5,8 +5,10 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * ============================================================================
@@ -203,6 +205,7 @@ public class CsvReaderService {
 
             Map<String, Integer> columnMap = new HashMap<>();
             String fileMonth = null;
+            Set<String> seenECodes = new HashSet<>();
             Utils.LogUtils.debug("CSV reader initialized. Waiting to process records.");
 
             while ((line = br.readLine()) != null) {
@@ -255,6 +258,18 @@ public class CsvReaderService {
                         columnMap.put(header, i);
                     }
                     Utils.LogUtils.info("CSV headers mapped successfully. Total headers: {}", columnMap.size());
+                    
+                    // FR-20: Assert all expected headers are present
+                    List<String> missingHeaders = new ArrayList<>();
+                    for (String expected : expectedHeaders) {
+                        if (!columnMap.containsKey(expected)) {
+                            missingHeaders.add(expected);
+                        }
+                    }
+                    if (!missingHeaders.isEmpty()) {
+                        throw new IllegalArgumentException("Missing expected columns: " + String.join(", ", missingHeaders));
+                    }
+                    
                     continue; // Skip processing this row further, as it's just headers
                 }
 
@@ -299,8 +314,6 @@ public class CsvReaderService {
                 emp.email = safeGet(cols, columnMap, "email");
 
                 emp.designation = safeGet(cols, columnMap, "designation");
-                if (emp.designation.isEmpty())
-                    emp.designation = "General"; // Default for demo format
 
                 emp.bankName = safeGet(cols, columnMap, "bank name");
                 emp.bankAccountNo = safeGet(cols, columnMap, "bank a/c no.");
@@ -326,16 +339,26 @@ public class CsvReaderService {
                 String rawTotalBasic = safeGet(cols, columnMap, "total basic");
                 String rawNetSalary = safeGet(cols, columnMap, "net salary");
 
-                Utils.LogUtils.info(
-                        "DEBUG -> Row {}, rawDesignation='{}'",
-                        rowNum
-                        );
+                Utils.LogUtils.debug("DEBUG -> Row {}", rowNum);
 
                 if (emp.eCode.isEmpty()) {
                     String err = "Row " + rowNum + ": Missing Employee ID.";
                     errors.add(new CsvError(emp.eCode, rawName, err));
                     Utils.LogUtils.warn("CSV Parse Warning - {}", err);
+                } else if (!seenECodes.add(emp.eCode)) {
+                    // FR-02: E.Code unique validation
+                    String err = "Row " + rowNum + ": Duplicate Employee ID found: " + emp.eCode;
+                    errors.add(new CsvError(emp.eCode, emp.name, err));
+                    Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
                 }
+
+                if (emp.designation.isEmpty()) {
+                    // FR-02: Designation presence validation
+                    String err = "Row " + rowNum + ": Missing Designation for E.Code " + emp.eCode;
+                    errors.add(new CsvError(emp.eCode, emp.name, err));
+                    Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
+                }
+
                 if (rawName.isEmpty()) {
                     String err = "Row " + rowNum + ": Missing Employee Name for E.Code " + emp.eCode;
                     errors.add(new CsvError(emp.eCode, emp.name, err));
