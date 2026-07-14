@@ -27,7 +27,7 @@ import java.util.List;
 import javax.swing.AbstractCellEditor;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
-import javax.swing.BoxLayout;
+
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
@@ -104,7 +104,7 @@ public class SalarySlipGenerator extends JFrame {
     private static final Color ORANGE = new Color(217, 119, 6);
     private static final Color RED = new Color(220, 38, 38);
     private static final Color BLUE_MID = new Color(37, 99, 235);
-    private static final Color BLUE_LIGHT = new Color(219, 234, 254);
+
     private static final Color UPLOAD_GREEN = new Color(24, 184, 111);
 
     // Table styling colors
@@ -152,6 +152,7 @@ public class SalarySlipGenerator extends JFrame {
             this.action = action;
         }
     }
+
     public static List<FailedRecord> failedRecords = new ArrayList<>();
 
     // --------------------------------------------------------
@@ -169,10 +170,10 @@ public class SalarySlipGenerator extends JFrame {
 
     /** Dropdown combo box to filter the table by payroll month */
     private JComboBox<String> monthCombo;
-    
+
     /** In-memory storage for SMTP password, pre-loaded from smtp.properties */
     private String smtpPassword = Utils.MailUtil.getSmtpPass();
-    
+
     // Dashboard stat labels
     private JLabel totalCountLbl;
     private JLabel generatedCountLbl;
@@ -248,18 +249,24 @@ public class SalarySlipGenerator extends JFrame {
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 14, 0));
         right.setOpaque(false);
 
-
-
         // Upload CSV Button
         right.add(makeHeaderButton("\uE898", "Upload CSV", UPLOAD_GREEN, WHITE,
                 e -> {
                     JFileChooser chooser = new JFileChooser();
                     chooser.setDialogTitle("Select Payroll CSV File");
                     int res = chooser.showOpenDialog(this);
+
                     if (res == JFileChooser.APPROVE_OPTION) {
                         try {
+
+                            Utils.LogUtils.info("User selected CSV file: {}",
+                                    chooser.getSelectedFile().getAbsolutePath());
+
                             Services.CsvReaderService.CsvParseResult result = Services.CsvReaderService
                                     .parsePayrollCsv(chooser.getSelectedFile().getAbsolutePath());
+
+                            Utils.LogUtils.info("CSV parsed successfully. Total Employees: {}",
+                                    result.employees.size());
 
                             // Store the raw data for PDF Generation
                             currentRawCsvData = result.employees;
@@ -269,26 +276,49 @@ public class SalarySlipGenerator extends JFrame {
                             for (Object[] row : result.rows) {
                                 model.addRow(row);
                             }
+
                             updateDashboardStats();
 
-                            // Check if validation found any errors (e.g. missing IDs, missing names)
+                            // Check if validation found any errors
                             if (!result.errors.isEmpty()) {
+
+                                Utils.LogUtils.warn("CSV validation completed with {} errors.",
+                                        result.errors.size());
+
                                 for (Services.CsvReaderService.CsvError err : result.errors) {
                                     String empId = (err.eCode == null || err.eCode.isEmpty()) ? "Unknown" : err.eCode;
                                     String empName = (err.name == null || err.name.isEmpty()) ? "Unknown" : err.name;
                                     failedRecords.add(new FailedRecord(empId, empName, err.reason, "Correct CSV data"));
                                 }
+
                                 showFailedRecordsDialog();
+
                             } else {
+
+                                Utils.LogUtils.info("CSV uploaded without validation errors.");
+
                                 JOptionPane.showMessageDialog(this,
-                                        "Data loaded successfully from CSV! No errors found.", "Success",
+                                        "Data loaded successfully from CSV! No errors found.",
+                                        "Success",
                                         JOptionPane.INFORMATION_MESSAGE);
                             }
+
                         } catch (IllegalArgumentException ex) {
-                            JOptionPane.showMessageDialog(this, "CSV Validation Failed: " + ex.getMessage(), "Validation Error",
+
+                            Utils.LogUtils.error("CSV validation failed: {}", ex.getMessage(), ex);
+
+                            JOptionPane.showMessageDialog(this,
+                                    "CSV Validation Failed: " + ex.getMessage(),
+                                    "Validation Error",
                                     JOptionPane.ERROR_MESSAGE);
+
                         } catch (Exception ex) {
-                            JOptionPane.showMessageDialog(this, "Error reading file: " + ex.getMessage(), "Error",
+
+                            Utils.LogUtils.error("Error while uploading CSV: {}", ex.getMessage(), ex);
+
+                            JOptionPane.showMessageDialog(this,
+                                    "Error reading file: " + ex.getMessage(),
+                                    "Error",
                                     JOptionPane.ERROR_MESSAGE);
                         }
                     }
@@ -298,20 +328,25 @@ public class SalarySlipGenerator extends JFrame {
         right.add(makeHeaderButton("\uE74C", "Generate Slips", PRIMARY_PURPLE, WHITE,
                 e -> {
                     if (currentRawCsvData == null || currentRawCsvData.isEmpty()) {
-                        JOptionPane.showMessageDialog(this, "No data uploaded! Please upload a CSV first.", "Warning",
+                        JOptionPane.showMessageDialog(this,
+                                "No data uploaded! Please upload a CSV first.",
+                                "Warning",
                                 JOptionPane.WARNING_MESSAGE);
                         return;
                     }
 
                     String formattedMonth = getFormattedMonth();
-                    String outputDir = System.getProperty("user.home") + java.io.File.separator + "SalarySlips"
+                    String outputDir = System.getProperty("user.home")
+                            + java.io.File.separator + "SalarySlips"
                             + java.io.File.separator + formattedMonth;
+
                     int successCount = 0;
                     int failCount = 0;
 
                     for (int i = 0; i < currentRawCsvData.size(); i++) {
+
                         Services.CsvReaderService.EmployeeSalary emp = currentRawCsvData.get(i);
-                        // Skip empty rows or rows without an ID
+
                         if (emp.eCode == null || emp.eCode.trim().isEmpty())
                             continue;
 
@@ -319,21 +354,63 @@ public class SalarySlipGenerator extends JFrame {
                         String filename = empId + "_" + formattedMonth + ".pdf";
 
                         try {
-                            String path = Utils.PdfUtil.generateSalarySlip(emp, outputDir, formattedMonth, filename);
+
+                            Utils.LogUtils.info("Generating salary slip for Employee ID: {}", empId);
+
+                            String path = Utils.PdfUtil.generateSalarySlip(
+                                    emp,
+                                    outputDir,
+                                    formattedMonth,
+                                    filename);
                             if (path != null) {
+                                Utils.LogUtils.info(
+                                        "Salary slip generated successfully for Employee ID: {}",
+                                        empId);
+
                                 successCount++;
+
                                 if (i < model.getRowCount()) {
-                                    model.setValueAt("Generated", i, 6); // Update slip status
+                                    model.setValueAt("Generated", i, 6);
                                 }
+
                             } else {
+
+                                Utils.LogUtils.warn(
+                                        "PDF generation returned null for Employee ID: {}",
+                                        empId);
+
                                 failCount++;
-                                failedRecords.add(new FailedRecord(empId, emp.name, "PDF Generation returned null", "Check Logs"));
+
+                                failedRecords.add(new FailedRecord(
+                                        empId,
+                                        emp.name,
+                                        "PDF Generation returned null",
+                                        "Check Logs"));
                             }
+
                         } catch (Exception ex) {
+
+                            Utils.LogUtils.error(
+                                    "PDF generation failed for Employee ID {}: {}",
+                                    empId,
+                                    ex.getMessage(),
+                                    ex);
+
                             failCount++;
-                            failedRecords.add(new FailedRecord(empId, emp.name, "PDF Error: " + ex.getMessage(), "Check PDF templates or permissions"));
+
+                            failedRecords.add(new FailedRecord(
+                                    empId,
+                                    emp.name,
+                                    "PDF Error: " + ex.getMessage(),
+                                    "Check PDF templates or permissions"));
                         }
                     }
+
+                    Utils.LogUtils.info(
+                            "Salary slip generation completed. Success={}, Failed={}",
+                            successCount,
+                            failCount);
+
                     updateDashboardStats();
 
                     if (failCount > 0) {
@@ -342,7 +419,11 @@ public class SalarySlipGenerator extends JFrame {
                         icon.setFont(new Font("Segoe MDL2 Assets", Font.PLAIN, 40));
                         icon.setForeground(ORANGE);
                         p.add(icon, BorderLayout.WEST);
-                        JLabel msg = new JLabel("<html><h3 style='margin:0; padding:0; color:#173463;'>Generation Completed with Errors</h3><p style='margin-top:8px;'>Successfully generated: <b>" + successCount + "</b> slips</p><p style='color:#dc2626;'>Failed to generate: <b>" + failCount + "</b> slips</p><br><p style='color:#777777;'>Opening HR Failed Records for details...</p></html>");
+                        JLabel msg = new JLabel(
+                                "<html><h3 style='margin:0; padding:0; color:#173463;'>Generation Completed with Errors</h3><p style='margin-top:8px;'>Successfully generated: <b>"
+                                        + successCount
+                                        + "</b> slips</p><p style='color:#dc2626;'>Failed to generate: <b>" + failCount
+                                        + "</b> slips</p><br><p style='color:#777777;'>Opening HR Failed Records for details...</p></html>");
                         msg.setFont(FONT);
                         p.add(msg, BorderLayout.CENTER);
                         JOptionPane.showMessageDialog(this, p, "Generation Result", JOptionPane.PLAIN_MESSAGE);
@@ -353,7 +434,11 @@ public class SalarySlipGenerator extends JFrame {
                         icon.setFont(new Font("Segoe MDL2 Assets", Font.PLAIN, 40));
                         icon.setForeground(GREEN);
                         p.add(icon, BorderLayout.WEST);
-                        JLabel msg = new JLabel("<html><h3 style='margin:0; padding:0; color:#173463;'>Generation Successful!</h3><p style='margin-top:8px;'>Successfully generated <b>" + successCount + "</b> salary slips.</p><br><p style='color:#777777;'>Saved to:<br>" + outputDir + "</p></html>");
+                        JLabel msg = new JLabel(
+                                "<html><h3 style='margin:0; padding:0; color:#173463;'>Generation Successful!</h3><p style='margin-top:8px;'>Successfully generated <b>"
+                                        + successCount
+                                        + "</b> salary slips.</p><br><p style='color:#777777;'>Saved to:<br>"
+                                        + outputDir + "</p></html>");
                         msg.setFont(FONT);
                         p.add(msg, BorderLayout.CENTER);
                         JOptionPane.showMessageDialog(this, p, "Generation Result", JOptionPane.PLAIN_MESSAGE);
@@ -366,7 +451,8 @@ public class SalarySlipGenerator extends JFrame {
     }
 
     /**
-     * Opens a stylized scrollable dialog showing run logs from a specified directory.
+     * Opens a stylized scrollable dialog showing run logs from a specified
+     * directory.
      * Includes options to switch between different log files, refresh contents,
      * and open logs in the system editor.
      */
@@ -496,16 +582,18 @@ public class SalarySlipGenerator extends JFrame {
         titleLbl.setFont(FONT_HEADING);
         titleLbl.setForeground(TEXT_HEADING);
         topPanel.add(titleLbl);
-        
+
         // Table Model
-        String[] columns = {"Employee ID", "Name", "Reason for Failure", "Suggested Action"};
+        String[] columns = { "Employee ID", "Name", "Reason for Failure", "Suggested Action" };
         DefaultTableModel errModel = new DefaultTableModel(columns, 0) {
-            public boolean isCellEditable(int row, int column) { return false; }
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
         };
         for (FailedRecord fr : failedRecords) {
-            errModel.addRow(new Object[]{fr.eCode, fr.name, fr.reason, fr.action});
+            errModel.addRow(new Object[] { fr.eCode, fr.name, fr.reason, fr.action });
         }
-        
+
         JTable errTable = new JTable(errModel);
         errTable.setRowHeight(35);
         errTable.setFont(FONT_TABLE_CELL);
@@ -516,7 +604,7 @@ public class SalarySlipGenerator extends JFrame {
         errTable.getTableHeader().setFont(FONT_TABLE_HEAD);
         errTable.getTableHeader().setBackground(TABLE_HEADER_BG);
         errTable.getTableHeader().setForeground(WHITE);
-        
+
         DefaultTableCellRenderer errHeaderRenderer = new DefaultTableCellRenderer() {
             public Component getTableCellRendererComponent(JTable t, Object val,
                     boolean sel, boolean foc, int row, int col) {
@@ -542,28 +630,30 @@ public class SalarySlipGenerator extends JFrame {
                     if (val != null) {
                         lbl.setToolTipText(val.toString());
                     }
-                    if (col == 2) c.setForeground(RED);
-                    else c.setForeground(TEXT_BODY);
+                    if (col == 2)
+                        c.setForeground(RED);
+                    else
+                        c.setForeground(TEXT_BODY);
                 }
                 return c;
             }
         });
-        
+
         JScrollPane scrollPane = new JScrollPane(errTable);
-        
+
         // Bottom Panel
         JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
         bottomPanel.setOpaque(false);
-        
+
         JButton refreshBtn = new JButton("Refresh");
         refreshBtn.setFont(FONT_BOLD);
         refreshBtn.addActionListener(e -> {
             errModel.setRowCount(0);
             for (FailedRecord fr : failedRecords) {
-                errModel.addRow(new Object[]{fr.eCode, fr.name, fr.reason, fr.action});
+                errModel.addRow(new Object[] { fr.eCode, fr.name, fr.reason, fr.action });
             }
         });
-        
+
         JButton exportBtn = new JButton("Export CSV");
         exportBtn.setFont(FONT_BOLD);
         exportBtn.addActionListener(e -> {
@@ -576,21 +666,22 @@ public class SalarySlipGenerator extends JFrame {
                 }
                 pw.close();
                 JOptionPane.showMessageDialog(dialog, "Exported to " + file.getAbsolutePath());
-            } catch (Exception ex) {}
+            } catch (Exception ex) {
+            }
         });
-        
+
         JButton closeBtn = new JButton("Close");
         closeBtn.setFont(FONT_BOLD);
         closeBtn.addActionListener(e -> dialog.dispose());
-        
+
         bottomPanel.add(refreshBtn);
         bottomPanel.add(exportBtn);
         bottomPanel.add(closeBtn);
-        
+
         dialog.add(topPanel, BorderLayout.NORTH);
         dialog.add(scrollPane, BorderLayout.CENTER);
         dialog.add(bottomPanel, BorderLayout.SOUTH);
-        
+
         if (failedRecords.isEmpty()) {
             // Show green checkmark success screen
             JPanel successPanel = new JPanel(new BorderLayout());
@@ -605,11 +696,11 @@ public class SalarySlipGenerator extends JFrame {
             msg.setHorizontalAlignment(SwingConstants.CENTER);
             successPanel.add(check, BorderLayout.CENTER);
             successPanel.add(msg, BorderLayout.SOUTH);
-            
+
             dialog.remove(scrollPane);
             dialog.add(successPanel, BorderLayout.CENTER);
         }
-        
+
         dialog.setVisible(true);
     }
 
@@ -841,16 +932,16 @@ public class SalarySlipGenerator extends JFrame {
             topPanel.add(selectLbl);
 
             // Setup scaling variables
-            final double[] zoomFactor = {1.0};
+            final double[] zoomFactor = { 1.0 };
 
             // Initial Image (before layout)
             java.awt.Image initialImg = bim.getScaledInstance(-1, 500, java.awt.Image.SCALE_SMOOTH);
             JLabel imageLabel = new JLabel(new ImageIcon(initialImg));
             imageLabel.setHorizontalAlignment(SwingConstants.CENTER);
             imageLabel.setVerticalAlignment(SwingConstants.CENTER);
-            
+
             JScrollPane scrollPane = new JScrollPane(imageLabel);
-            
+
             Runnable rescaleImage = () -> {
                 int aw = scrollPane.getWidth() - 10;
                 int ah = scrollPane.getHeight() - 10;
@@ -858,10 +949,10 @@ public class SalarySlipGenerator extends JFrame {
                     double scaleX = (double) aw / bim.getWidth();
                     double scaleY = (double) ah / bim.getHeight();
                     double baseScale = Math.min(scaleX, scaleY);
-                    
+
                     int newW = (int) (bim.getWidth() * baseScale * zoomFactor[0]);
                     int newH = (int) (bim.getHeight() * baseScale * zoomFactor[0]);
-                    
+
                     if (newW > 10 && newH > 10) {
                         java.awt.Image newImg = bim.getScaledInstance(newW, newH, java.awt.Image.SCALE_FAST);
                         imageLabel.setIcon(new ImageIcon(newImg));
@@ -870,7 +961,7 @@ public class SalarySlipGenerator extends JFrame {
                     }
                 }
             };
-            
+
             // Add zoom functionality
             imageLabel.addMouseWheelListener(e -> {
                 if (e.isControlDown()) {
@@ -886,14 +977,14 @@ public class SalarySlipGenerator extends JFrame {
             // Increase scroll speed
             scrollPane.getVerticalScrollBar().setUnitIncrement(16);
             scrollPane.setBorder(BorderFactory.createLineBorder(new Color(218, 224, 233)));
-            
+
             // Add resize listener to dynamically fit the PDF
             scrollPane.addComponentListener(new java.awt.event.ComponentAdapter() {
                 public void componentResized(java.awt.event.ComponentEvent evt) {
                     rescaleImage.run();
                 }
             });
-            
+
             JPanel centerPanel = new JPanel(new BorderLayout());
             centerPanel.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10));
             centerPanel.setOpaque(false);
@@ -1151,7 +1242,7 @@ public class SalarySlipGenerator extends JFrame {
         sendAllBtn.setFocusPainted(false);
         sendAllBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
         sendAllBtn.setPreferredSize(new Dimension(200, 42));
-        
+
         // Button action listener
         sendAllBtn.addActionListener(e -> {
             // =========================================================
@@ -1194,7 +1285,11 @@ public class SalarySlipGenerator extends JFrame {
                 icon.setFont(new Font("Segoe MDL2 Assets", Font.PLAIN, 40));
                 icon.setForeground(ORANGE);
                 p.add(icon, BorderLayout.WEST);
-                JLabel msg = new JLabel("<html><h3 style='margin:0; padding:0; color:#173463;'>Batch Send Completed with Errors</h3><p style='margin-top:8px;'>Sent: <b>" + totalSent + "</b> mails</p><p>Skipped (Already Sent): <b>" + totalSkipped + "</b></p><p style='color:#dc2626;'>Failed to send: <b>" + totalFailed + "</b> mails</p><br><p style='color:#777777;'>Opening HR Failed Records for details...</p></html>");
+                JLabel msg = new JLabel(
+                        "<html><h3 style='margin:0; padding:0; color:#173463;'>Batch Send Completed with Errors</h3><p style='margin-top:8px;'>Sent: <b>"
+                                + totalSent + "</b> mails</p><p>Skipped (Already Sent): <b>" + totalSkipped
+                                + "</b></p><p style='color:#dc2626;'>Failed to send: <b>" + totalFailed
+                                + "</b> mails</p><br><p style='color:#777777;'>Opening HR Failed Records for details...</p></html>");
                 msg.setFont(FONT);
                 p.add(msg, BorderLayout.CENTER);
                 JOptionPane.showMessageDialog(card, p, "Send Mail Result", JOptionPane.PLAIN_MESSAGE);
@@ -1205,7 +1300,10 @@ public class SalarySlipGenerator extends JFrame {
                 icon.setFont(new Font("Segoe MDL2 Assets", Font.PLAIN, 40));
                 icon.setForeground(GREEN);
                 p.add(icon, BorderLayout.WEST);
-                JLabel msg = new JLabel("<html><h3 style='margin:0; padding:0; color:#173463;'>Batch Send Successful!</h3><p style='margin-top:8px;'>Successfully sent: <b>" + totalSent + "</b> mails.</p><p>Skipped (Already Sent): <b>" + totalSkipped + "</b></p></html>");
+                JLabel msg = new JLabel(
+                        "<html><h3 style='margin:0; padding:0; color:#173463;'>Batch Send Successful!</h3><p style='margin-top:8px;'>Successfully sent: <b>"
+                                + totalSent + "</b> mails.</p><p>Skipped (Already Sent): <b>" + totalSkipped
+                                + "</b></p></html>");
                 msg.setFont(FONT);
                 p.add(msg, BorderLayout.CENTER);
                 JOptionPane.showMessageDialog(card, p, "Send Mail Result", JOptionPane.PLAIN_MESSAGE);
@@ -1241,7 +1339,8 @@ public class SalarySlipGenerator extends JFrame {
         row2.add(Box.createHorizontalStrut(14));
 
         // View Log Button
-        JButton viewLogBtn = makeSmallButton("\uE9F9", "View Log", BLUE_MID, WHITE, ev -> showLogDialog("Logs/Developer_Logs"));
+        JButton viewLogBtn = makeSmallButton("\uE9F9", "View Log", BLUE_MID, WHITE,
+                ev -> showLogDialog("Logs/Developer_Logs"));
         viewLogBtn.setPreferredSize(new Dimension(90, 30)); // Increased height
         viewLogBtn.setFont(new Font("Segoe UI", Font.BOLD, 12)); // Changed font
         row2.add(viewLogBtn);
@@ -1250,7 +1349,8 @@ public class SalarySlipGenerator extends JFrame {
         row2.add(Box.createHorizontalStrut(14));
 
         // View Warning Button
-        JButton viewWarningBtn = makeSmallButton("\uE7BA", "View Warning", RED, WHITE, ev -> showLogDialog("Logs/HR_Logs"));
+        JButton viewWarningBtn = makeSmallButton("\uE7BA", "View Warning", RED, WHITE,
+                ev -> showLogDialog("Logs/HR_Logs"));
         viewWarningBtn.setPreferredSize(new Dimension(120, 30)); // Matched height, wider for text
         viewWarningBtn.setFont(new Font("Segoe UI", Font.BOLD, 12));
         row2.add(viewWarningBtn);
@@ -1605,7 +1705,8 @@ public class SalarySlipGenerator extends JFrame {
         java.io.File pdfFile = new java.io.File(outputDir, filename);
 
         try {
-            boolean success = Utils.MailUtil.sendAndTrackSlip(empId, formattedMonth, email, name, doj, pdfFile.getAbsolutePath(), smtpPassword);
+            boolean success = Utils.MailUtil.sendAndTrackSlip(empId, formattedMonth, email, name, doj,
+                    pdfFile.getAbsolutePath(), smtpPassword);
             if (!success) {
                 failedRecords.add(new FailedRecord(empId, name, "Email sending failed", "Verify email/SMTP"));
             }

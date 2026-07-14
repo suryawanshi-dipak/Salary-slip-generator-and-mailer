@@ -14,15 +14,19 @@ import java.util.Map;
  * ============================================================================
  * ROLE:
  * This service acts as the data ingestion layer for the Salary Slip Generator.
- * It is responsible for parsing payroll CSV files, cleaning and validating the raw data,
+ * It is responsible for parsing payroll CSV files, cleaning and validating the
+ * raw data,
  * formatting metrics for display in the JTable, and flagging validation errors.
  *
  * HOW IT FITS IN:
- * - GUI (SalarySlipGenerator) calls this service when the user uploads a CSV file.
+ * - GUI (SalarySlipGenerator) calls this service when the user uploads a CSV
+ * file.
  * - The parsed rows are loaded into the GUI's table model.
- * - The parsed rows are saved in-memory as EmployeeSalary objects and subsequently 
- *   passed to PdfUtil for PDF generation.
- * - It contains a global `isLoggingEnabled` flag connected to the UI's Log Toggle.
+ * - The parsed rows are saved in-memory as EmployeeSalary objects and
+ * subsequently
+ * passed to PdfUtil for PDF generation.
+ * - It contains a global `isLoggingEnabled` flag connected to the UI's Log
+ * Toggle.
  * ============================================================================
  */
 public class CsvReaderService {
@@ -113,19 +117,22 @@ public class CsvReaderService {
 
     /**
      * Parses a single CSV line into a list of string tokens, respecting fields
-     * enclosed in double quotes. This prevents embedded commas (e.g., inside an address
-     * or formatted currency) from incorrectly splitting the data into separate columns.
+     * enclosed in double quotes. This prevents embedded commas (e.g., inside an
+     * address
+     * or formatted currency) from incorrectly splitting the data into separate
+     * columns.
      * 
      * @param line The raw line read from the CSV file
      * @return A list of extracted column values
      */
     private static List<String> parseCsvLine(String line) {
         List<String> result = new ArrayList<>();
-        if (line == null || line.isEmpty()) return result;
-        
+        if (line == null || line.isEmpty())
+            return result;
+
         StringBuilder currentToken = new StringBuilder();
         boolean inQuotes = false;
-        
+
         // Loop through each character to handle quotes properly
         for (int i = 0; i < line.length(); i++) {
             char c = line.charAt(i);
@@ -157,7 +164,8 @@ public class CsvReaderService {
      * the ingestion process.
      */
     private static int parseInteger(String val) {
-        if (val == null || val.trim().isEmpty()) return 0;
+        if (val == null || val.trim().isEmpty())
+            return 0;
         try {
             return Integer.parseInt(val.trim());
         } catch (NumberFormatException e) {
@@ -167,84 +175,105 @@ public class CsvReaderService {
 
     /**
      * Parses the given CSV file into a format suitable for the SalarySlipGenerator
-     * table model, performs data validation, maps columns by header name, and 
+     * table model, performs data validation, maps columns by header name, and
      * applies 4-identity reconciliation checks.
      * 
      * @param filePath The absolute path to the CSV file
-     * @return A CsvParseResult containing the 2D Object array, a list of parsed 
+     * @return A CsvParseResult containing the 2D Object array, a list of parsed
      *         EmployeeSalary objects, and a list of validation errors.
      * @throws IOException If there is an issue reading the file
      */
     public static CsvParseResult parsePayrollCsv(String filePath) throws IOException {
+        Utils.LogUtils.info("Starting CSV parsing for file: {}", filePath);
         List<Object[]> rows = new ArrayList<>();
         List<EmployeeSalary> employees = new ArrayList<>();
         List<CsvError> errors = new ArrayList<>();
 
         String[] expectedHeaders = {
-            "month", "sr.no.", "e.code", "name", "doj", "total basic", "total hra", "total spl. allowance", 
-            "total kra", "gross salary", "leaves availed", "month days", "days worked", "basic", "hra", 
-            "spl. allowance", "kra", "net salary", "pt", "loan deducted", "tds", "total deduction", "net pay", 
-            "email", "designation", "bank name", "bank a/c no.", "performance bonus", "office expense", "leave payment"
+                "month", "sr.no.", "e.code", "name", "doj", "total basic", "total hra", "total spl. allowance",
+                "total kra", "gross salary", "leaves availed", "month days", "days worked", "basic", "hra",
+                "spl. allowance", "kra", "net salary", "pt", "loan deducted", "tds", "total deduction", "net pay",
+                "email", "designation", "bank name", "bank a/c no.", "performance bonus", "office expense",
+                "leave payment"
         };
 
         try (BufferedReader br = new BufferedReader(new FileReader(filePath))) {
             String line;
             int rowNum = 0;
-            
+
             Map<String, Integer> columnMap = new HashMap<>();
             String fileMonth = null;
+            Utils.LogUtils.debug("CSV reader initialized. Waiting to process records.");
 
             while ((line = br.readLine()) != null) {
                 rowNum++;
+                Utils.LogUtils.debug("Processing row {}", rowNum);
                 if (line.trim().isEmpty()) {
+                    Utils.LogUtils.debug("Skipping empty row {}", rowNum);
                     continue;
                 }
 
                 List<String> cols = parseCsvLine(line);
+                Utils.LogUtils.debug("Parsed {} columns from row {}", cols.size(), rowNum);
 
                 // If columnMap is empty, this is the very first row (the header row)
-                if (columnMap.isEmpty()) { 
+                if (columnMap.isEmpty()) {
                     // Map every column header strictly by its lower-cased name
                     for (int i = 0; i < cols.size(); i++) {
                         String header = cols.get(i).trim().toLowerCase();
-                        
+
                         // Map aliases for demo CSV format
-                        if (header.equals("net total")) header = "gross salary";
-                        if (header.equals("leave avalied")) header = "leaves availed";
-                        if (header.equals("month day")) header = "month days";
-                        if (header.equals("days wo")) header = "days worked";
-                        if (header.equals("total")) header = "net salary";
-                        if (header.equals("loan repayment")) header = "loan deducted";
-                        if (header.equals("net payable")) header = "net pay";
-                        
+                        if (header.equals("net total"))
+                            header = "gross salary";
+                        if (header.equals("leave avalied"))
+                            header = "leaves availed";
+                        if (header.equals("month day"))
+                            header = "month days";
+                        if (header.equals("days wo"))
+                            header = "days worked";
+                        if (header.equals("total"))
+                            header = "net salary";
+                        if (header.equals("loan repayment"))
+                            header = "loan deducted";
+                        if (header.equals("net payable"))
+                            header = "net pay";
+
                         // Handle duplicate headers (total components vs earned components)
                         if (header.equals("basic")) {
-                            if (!columnMap.containsKey("total basic")) header = "total basic";
+                            if (!columnMap.containsKey("total basic"))
+                                header = "total basic";
                         }
                         if (header.equals("hra")) {
-                            if (!columnMap.containsKey("total hra")) header = "total hra";
+                            if (!columnMap.containsKey("total hra"))
+                                header = "total hra";
                         }
                         if (header.equals("spl. allowance")) {
-                            if (!columnMap.containsKey("total spl. allowance")) header = "total spl. allowance";
+                            if (!columnMap.containsKey("total spl. allowance"))
+                                header = "total spl. allowance";
                         }
-                        
+
                         columnMap.put(header, i);
                     }
+                    Utils.LogUtils.info("CSV headers mapped successfully. Total headers: {}", columnMap.size());
                     continue; // Skip processing this row further, as it's just headers
                 }
-                
+
                 // At this point, we are processing a data row.
-                // We use safeGet to pull the data dynamically by header name rather than hardcoded array index.
+                // We use safeGet to pull the data dynamically by header name rather than
+                // hardcoded array index.
                 String eCodeVal = safeGet(cols, columnMap, "e.code");
                 if (eCodeVal == null || eCodeVal.isEmpty()) {
-                    continue; // Skip non-employee rows as an insurance policy
+                    Utils.LogUtils.debug("Skipping non-employee row {}", rowNum);
+                    continue;
                 }
 
-                // Populate the object properties by extracting columns dynamically via the columnMap
+                // Populate the object properties by extracting columns dynamically via the
+                // columnMap
                 EmployeeSalary emp = new EmployeeSalary();
                 emp.month = safeGet(cols, columnMap, "month");
-                if (emp.month.isEmpty()) emp.month = "Jul-26"; // Default for demo format
-                
+                if (emp.month.isEmpty())
+                    emp.month = "Jul-26"; // Default for demo format
+
                 emp.srNo = safeGet(cols, columnMap, "sr.no.");
                 emp.eCode = eCodeVal;
                 emp.name = safeGet(cols, columnMap, "name");
@@ -268,31 +297,39 @@ public class CsvReaderService {
                 emp.totalDeduction = safeGet(cols, columnMap, "total deduction");
                 emp.netPay = safeGet(cols, columnMap, "net pay");
                 emp.email = safeGet(cols, columnMap, "email");
-                
+
                 emp.designation = safeGet(cols, columnMap, "designation");
-                if (emp.designation.isEmpty()) emp.designation = "General"; // Default for demo format
-                
+                if (emp.designation.isEmpty())
+                    emp.designation = "General"; // Default for demo format
+
                 emp.bankName = safeGet(cols, columnMap, "bank name");
                 emp.bankAccountNo = safeGet(cols, columnMap, "bank a/c no.");
                 emp.performanceBonus = safeGet(cols, columnMap, "performance bonus");
                 emp.officeExpense = safeGet(cols, columnMap, "office expense");
                 emp.leavePayment = safeGet(cols, columnMap, "leave payment");
+                Utils.LogUtils.debug("Employee data mapped successfully for E.Code: {}", emp.eCode);
 
                 // --- Month Consistency Check (FR-19) ---
                 // Validates that every row in the file belongs to the same pay period.
                 // Mixed months indicate human error during CSV compilation.
                 if (fileMonth == null) {
                     fileMonth = emp.month;
+                    Utils.LogUtils.info("Payroll month detected: {}", fileMonth);
                 } else if (!fileMonth.equals(emp.month)) {
-                    throw new IllegalArgumentException("Conflicting run month on row " + rowNum + ": expected " + fileMonth + " but found " + emp.month);
+                    throw new IllegalArgumentException("Conflicting run month on row " + rowNum + ": expected "
+                            + fileMonth + " but found " + emp.month);
                 }
-                
+
                 // Validate presence of essential fields
                 String rawName = safeGet(cols, columnMap, "name");
                 String rawBasic = safeGet(cols, columnMap, "basic");
                 String rawTotalBasic = safeGet(cols, columnMap, "total basic");
                 String rawNetSalary = safeGet(cols, columnMap, "net salary");
-                String rawDesignation = safeGet(cols, columnMap, "designation");
+
+                Utils.LogUtils.info(
+                        "DEBUG -> Row {}, rawDesignation='{}'",
+                        rowNum
+                        );
 
                 if (emp.eCode.isEmpty()) {
                     String err = "Row " + rowNum + ": Missing Employee ID.";
@@ -319,11 +356,6 @@ public class CsvReaderService {
                     errors.add(new CsvError(emp.eCode, emp.name, err));
                     Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
                 }
-                if (rawDesignation.isEmpty()) {
-                    String err = "Row " + rowNum + ": Missing Designation for E.Code " + emp.eCode;
-                    errors.add(new CsvError(emp.eCode, emp.name, err));
-                    Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
-                }
 
                 // Reconciliation check
                 int totalBasic = parseInteger(emp.totalBasic);
@@ -331,7 +363,7 @@ public class CsvReaderService {
                 int totalSplAllowance = parseInteger(emp.totalSplAllowance);
                 int totalKra = parseInteger(emp.totalKra);
                 int grossSalary = parseInteger(emp.grossSalary);
-                
+
                 int basic = parseInteger(emp.basic);
                 int hra = parseInteger(emp.hra);
                 int splAllowance = parseInteger(emp.splAllowance);
@@ -340,40 +372,46 @@ public class CsvReaderService {
                 int officeExpense = parseInteger(emp.officeExpense);
                 int leavePayment = parseInteger(emp.leavePayment);
                 int netSalary = parseInteger(emp.netSalary);
-                
+
                 int pt = parseInteger(emp.pt);
                 int loanDeducted = parseInteger(emp.loanDeducted);
                 int tds = parseInteger(emp.tds);
                 int totalDeduction = parseInteger(emp.totalDeduction);
-                
+
                 int netPay = parseInteger(emp.netPay);
-                
+
                 // --- 4 Identities Arithmetic Reconciliation (FR-03 & FR-22) ---
-                // Re-enabled these warnings with a small tolerance (2) for rounding inconsistencies.
+                // Re-enabled these warnings with a small tolerance (2) for rounding
+                // inconsistencies.
                 int calculatedGross = totalBasic + totalHra + totalSplAllowance + totalKra;
                 if (Math.abs(grossSalary - calculatedGross) > 2) {
-                    String err = "Row " + rowNum + ": Gross Salary mismatch for E.Code " + emp.eCode + " (Calc: " + calculatedGross + ", Found: " + grossSalary + ")";
+                    String err = "Row " + rowNum + ": Gross Salary mismatch for E.Code " + emp.eCode + " (Calc: "
+                            + calculatedGross + ", Found: " + grossSalary + ")";
                     errors.add(new CsvError(emp.eCode, emp.name, err));
                     Utils.LogUtils.logHrWarning("Reconciliation Warning - " + err);
                 }
 
-                int calculatedNetSalary = basic + hra + splAllowance + kra + performanceBonus + officeExpense + leavePayment;
+                int calculatedNetSalary = basic + hra + splAllowance + kra + performanceBonus + officeExpense
+                        + leavePayment;
                 if (Math.abs(netSalary - calculatedNetSalary) > 2) {
-                    String err = "Row " + rowNum + ": Net Salary mismatch for E.Code " + emp.eCode + " (Calc: " + calculatedNetSalary + ", Found: " + netSalary + ")";
+                    String err = "Row " + rowNum + ": Net Salary mismatch for E.Code " + emp.eCode + " (Calc: "
+                            + calculatedNetSalary + ", Found: " + netSalary + ")";
                     errors.add(new CsvError(emp.eCode, emp.name, err));
                     Utils.LogUtils.logHrWarning("Reconciliation Warning - " + err);
                 }
 
                 int calculatedDeduction = pt + loanDeducted + tds;
                 if (Math.abs(totalDeduction - calculatedDeduction) > 2) {
-                    String err = "Row " + rowNum + ": Total Deduction mismatch for E.Code " + emp.eCode + " (Calc: " + calculatedDeduction + ", Found: " + totalDeduction + ")";
+                    String err = "Row " + rowNum + ": Total Deduction mismatch for E.Code " + emp.eCode + " (Calc: "
+                            + calculatedDeduction + ", Found: " + totalDeduction + ")";
                     errors.add(new CsvError(emp.eCode, emp.name, err));
                     Utils.LogUtils.logHrWarning("Reconciliation Warning - " + err);
                 }
 
                 int calculatedNetPay = netSalary - totalDeduction;
                 if (Math.abs(netPay - calculatedNetPay) > 2) {
-                    String err = "Row " + rowNum + ": Net Pay mismatch for E.Code " + emp.eCode + " (Calc: " + calculatedNetPay + ", Found: " + netPay + ")";
+                    String err = "Row " + rowNum + ": Net Pay mismatch for E.Code " + emp.eCode + " (Calc: "
+                            + calculatedNetPay + ", Found: " + netPay + ")";
                     errors.add(new CsvError(emp.eCode, emp.name, err));
                     Utils.LogUtils.logHrWarning("Reconciliation Warning - " + err);
                 }
@@ -388,7 +426,7 @@ public class CsvReaderService {
                 Object[] rowData = new Object[] {
                         emp.eCode,
                         emp.name,
-                        emp.designation, 
+                        emp.designation,
                         basicSalaryUI,
                         netSalaryUI,
                         emp.month,
@@ -396,10 +434,10 @@ public class CsvReaderService {
                         mailStatus,
                         action
                 };
-                
+
                 rows.add(rowData);
                 employees.add(emp);
-                
+
                 // Logging only non-PII values
                 Utils.LogUtils.info("Successfully processed row {} for E.Code: {}", rowNum, emp.eCode);
             }
@@ -408,13 +446,17 @@ public class CsvReaderService {
             Utils.LogUtils.error("Error reading CSV file {}: {}", filePath, e.getMessage(), e);
             throw e;
         }
-        
+        Utils.LogUtils.info(
+                "CSV parsing completed. Employees={}, Errors={}",
+                employees.size(),
+                errors.size());
         return new CsvParseResult(rows.toArray(new Object[0][]), employees, errors);
     }
-    
+
     /**
      * Safely retrieves a column value based on the column name mapped in columnMap.
-     * Prevents IndexOutOfBoundsExceptions if a field is entirely missing from the line string.
+     * Prevents IndexOutOfBoundsExceptions if a field is entirely missing from the
+     * line string.
      */
     private static String safeGet(List<String> cols, Map<String, Integer> columnMap, String header) {
         Integer idx = columnMap.get(header);

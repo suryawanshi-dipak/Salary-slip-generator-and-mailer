@@ -16,8 +16,6 @@ import java.util.HashSet;
 import java.util.Properties;
 import java.util.Set;
 
-
-
 import jakarta.mail.AuthenticationFailedException;
 import jakarta.mail.Authenticator;
 import jakarta.mail.Message;
@@ -35,18 +33,25 @@ import jakarta.mail.internet.MimeMultipart;
  * PROJECT UNDERSTANDING - MailUtil
  * ============================================================================
  * ROLE:
- * This utility handles SMTP configurations, ledger logs, and secure email dispatches.
- * It is responsible for sending password-protected PDF slips directly to employee emails.
+ * This utility handles SMTP configurations, ledger logs, and secure email
+ * dispatches.
+ * It is responsible for sending password-protected PDF slips directly to
+ * employee emails.
  *
  * DETAILED CAPABILITIES:
- * - SMTP Properties: Dynamically loads configuration from `DATA/smtp.properties`.
- * - Idempotency (Ledger): Saves sent keys (`empId_month`) to `DATA/sent_ledger.csv`
- *   to ensure we do not send duplicate emails if the dispatch process is re-run.
- *   `isSent(empId, month)` is checked prior to triggering a send action.
- * - Jakarta Mail: Forms multi-part messages with greeting text and PDF attachments.
- * - Retries: Securely attempts up to 2 dispatch retries with wait times on network issues.
- * - Logging: Generates structured audit trails (`Logs/run_report_<month>.log`) and
- *   uses standard SLF4J logs controlled by CsvReaderService.isLoggingEnabled.
+ * - SMTP Properties: Dynamically loads configuration from
+ * `DATA/smtp.properties`.
+ * - Idempotency (Ledger): Saves sent keys (`empId_month`) to
+ * `DATA/sent_ledger.csv`
+ * to ensure we do not send duplicate emails if the dispatch process is re-run.
+ * `isSent(empId, month)` is checked prior to triggering a send action.
+ * - Jakarta Mail: Forms multi-part messages with greeting text and PDF
+ * attachments.
+ * - Retries: Securely attempts up to 2 dispatch retries with wait times on
+ * network issues.
+ * - Logging: Generates structured audit trails (`Logs/run_report_<month>.log`)
+ * and
+ * uses standard SLF4J logs controlled by CsvReaderService.isLoggingEnabled.
  * ============================================================================
  */
 public class MailUtil {
@@ -62,6 +67,7 @@ public class MailUtil {
         smtpProps = new Properties();
         try (FileInputStream in = new FileInputStream(CONFIG_FILE)) {
             smtpProps.load(in);
+            Utils.LogUtils.info("SMTP configuration loaded successfully from {}", CONFIG_FILE);
         } catch (IOException e) {
             Utils.LogUtils.warn("Could not load config file {}: {}", CONFIG_FILE, e.getMessage());
         }
@@ -75,6 +81,7 @@ public class MailUtil {
                         sentKeys.add(line.trim());
                     }
                 }
+                Utils.LogUtils.info("Loaded {} sent email records from ledger", sentKeys.size());
             } catch (IOException e) {
                 Utils.LogUtils.error("Error reading sent ledger: {}", e.getMessage());
             }
@@ -84,6 +91,7 @@ public class MailUtil {
     /* --- CONFIGURATION --- */
     /**
      * Retrieves the SMTP host from properties or defaults to Office365.
+     * 
      * @return The SMTP host (e.g., smtp.gmail.com)
      */
     public static String getSmtpHost() {
@@ -92,6 +100,7 @@ public class MailUtil {
 
     /**
      * Retrieves the SMTP port from properties.
+     * 
      * @return The SMTP port (defaults to 587)
      */
     public static String getSmtpPort() {
@@ -100,6 +109,7 @@ public class MailUtil {
 
     /**
      * Retrieves the SMTP user account for authentication.
+     * 
      * @return The sender's email account username
      */
     public static String getSmtpUser() {
@@ -108,6 +118,7 @@ public class MailUtil {
 
     /**
      * Retrieves the email address the slip appears to be sent from.
+     * 
      * @return The "From" email address (defaults to the smtp user)
      */
     public static String getSmtpFrom() {
@@ -116,6 +127,7 @@ public class MailUtil {
 
     /**
      * Retrieves the SMTP password from properties.
+     * 
      * @return The SMTP password, or empty string if not set
      */
     public static String getSmtpPass() {
@@ -124,6 +136,7 @@ public class MailUtil {
 
     /**
      * Returns true if smtp.secure=true is set (implicit SSL, port 465).
+     * 
      * @return true for SSL mode, false for STARTTLS mode
      */
     public static boolean isSmtpSecure() {
@@ -132,7 +145,8 @@ public class MailUtil {
 
     /* --- IDEMPOTENCY / LEDGER --- */
     /**
-     * Checks if a salary slip has already been successfully sent to this employee for the given month.
+     * Checks if a salary slip has already been successfully sent to this employee
+     * for the given month.
      * This prevents duplicate emails when a batch is re-run.
      * 
      * @param empId Employee ID
@@ -144,7 +158,8 @@ public class MailUtil {
     }
 
     /**
-     * Marks an employee's salary slip as successfully sent by updating the in-memory tracking set
+     * Marks an employee's salary slip as successfully sent by updating the
+     * in-memory tracking set
      * and appending the record to the persistent ledger file (sent_ledger.csv).
      * 
      * @param empId Employee ID
@@ -157,6 +172,7 @@ public class MailUtil {
                     BufferedWriter bw = new BufferedWriter(fw);
                     PrintWriter out = new PrintWriter(bw)) {
                 out.println(key);
+                Utils.LogUtils.debug("Updated sent ledger with key {}", key);
             } catch (IOException e) {
                 Utils.LogUtils.error("Error writing to sent ledger: {}", e.getMessage());
             }
@@ -181,7 +197,7 @@ public class MailUtil {
 
         String logFileName = logDir + "/run_report_" + month + ".log";
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-
+        Utils.LogUtils.debug("Writing mail run report for Employee {} with status {}", empId, status);
         try (FileWriter fw = new FileWriter(logFileName, true);
                 BufferedWriter bw = new BufferedWriter(fw);
                 PrintWriter out = new PrintWriter(bw)) {
@@ -199,22 +215,27 @@ public class MailUtil {
 
     /* --- MAILER --- */
     /**
-     * The core mailing engine. 
-     * Generates a dynamic email body explaining the PDF password, attaches the generated PDF, 
-     * sends it securely via SMTP (with retry logic), and automatically updates tracking and logging.
+     * The core mailing engine.
+     * Generates a dynamic email body explaining the PDF password, attaches the
+     * generated PDF,
+     * sends it securely via SMTP (with retry logic), and automatically updates
+     * tracking and logging.
      * 
      * @param empId        Employee ID
      * @param month        Month of the slip
      * @param email        Recipient's email address
      * @param name         Employee's name for greeting
-     * @param doj          Date of Joining (used to instruct them on the password logic)
+     * @param doj          Date of Joining (used to instruct them on the password
+     *                     logic)
      * @param pdfPath      Absolute path to the generated PDF slip
-     * @param smtpPassword The SMTP password (provided securely at runtime by the user)
+     * @param smtpPassword The SMTP password (provided securely at runtime by the
+     *                     user)
      * @return true if sent successfully, false if validation or dispatch failed
      */
     public static boolean sendAndTrackSlip(String empId, String month, String email, String name, String doj,
             String pdfPath, String smtpPassword) {
-        Utils.LogUtils.info("Starting email dispatch process for Employee: {}, Month: {}, Email: {}", empId, month, email);
+        Utils.LogUtils.info("Starting email dispatch process for Employee: {}, Month: {}, Email: {}", empId, month,
+                email);
 
         if (email == null || email.isEmpty() || !email.contains("@")) {
             Utils.LogUtils.warn("Failed to send email to Employee {}: Invalid email address ({})", empId, email);
@@ -254,7 +275,7 @@ public class MailUtil {
             // Port 587: STARTTLS
             props.put("mail.smtp.starttls.enable", "true");
         }
-
+        Utils.LogUtils.info("Initializing SMTP session using host {} on port {}", host, port);
         Session session = Session.getInstance(props, new Authenticator() {
             protected PasswordAuthentication getPasswordAuthentication() {
                 return new PasswordAuthentication(user, smtpPassword);
@@ -264,7 +285,7 @@ public class MailUtil {
         int attempts = 0;
         int maxAttempts = 2;
         boolean success = false;
-
+        Utils.LogUtils.debug("Maximum email retry attempts configured: {}", maxAttempts);
         while (attempts < maxAttempts) {
             try {
                 Message message = new MimeMessage(session);
@@ -283,26 +304,32 @@ public class MailUtil {
                 multipart.addBodyPart(attachmentPart);
 
                 message.setContent(multipart);
+                Utils.LogUtils.debug("Sending email to Employee {} at {}", empId, email);
                 Transport.send(message);
 
                 success = true;
+                Utils.LogUtils.info("Email dispatched successfully for Employee {}", empId);
                 break;
 
             } catch (AuthenticationFailedException e) {
-                Utils.LogUtils.error("Failed to send email to Employee {} due to SMTP Authentication failure", empId, e);
+                Utils.LogUtils.error("Failed to send email to Employee {} due to SMTP Authentication failure", empId,
+                        e);
                 logRun(month, empId, "Failed", "SMTP Authentication failed");
                 return false;
             } catch (Exception e) {
                 attempts++;
-                Utils.LogUtils.warn("Attempt {} failed to send email to Employee {}: {}", attempts, empId, e.getMessage());
+                Utils.LogUtils.warn("Attempt {} failed to send email to Employee {}: {}", attempts, empId,
+                        e.getMessage());
                 if (attempts >= maxAttempts) {
-                    Utils.LogUtils.error("Max retry attempts reached. Failed to send email to Employee {}: {}", empId, e.getMessage(), e);
+                    Utils.LogUtils.error("Max retry attempts reached. Failed to send email to Employee {}: {}", empId,
+                            e.getMessage(), e);
                     logRun(month, empId, "Failed", "SMTP Error: " + e.getMessage());
                     return false;
                 }
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException ie) {
+                    Utils.LogUtils.warn("Retry wait interrupted for Employee {}", empId);
                 }
             }
         }
