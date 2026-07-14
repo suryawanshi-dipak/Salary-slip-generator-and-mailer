@@ -443,7 +443,12 @@ public class CsvReaderService {
                 String basicSalaryUI = "\u20B9" + parseInteger(emp.totalBasic);
                 String netSalaryUI = "\u20B9" + netSalary;
                 String slipStatus = "Pending";
+                
                 String mailStatus = "Pending";
+                if (Utils.MailUtil.isSent(emp.eCode, emp.month)) {
+                    mailStatus = "Sent";
+                }
+                
                 String action = "";
 
                 Object[] rowData = new Object[] {

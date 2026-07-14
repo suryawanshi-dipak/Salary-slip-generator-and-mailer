@@ -181,6 +181,9 @@ public class SalarySlipGenerator extends JFrame {
     private JLabel pendingCountLbl;
     private JLabel mailsSentCountLbl;
 
+    /** The button to batch send emails */
+    private JButton sendAllBtn;
+
     /* ===================== CONSTRUCTOR ===================== */
     /**
      * Initializes the main window and all its components.
@@ -237,6 +240,22 @@ public class SalarySlipGenerator extends JFrame {
                 monthCombo.removeAllItems();
                 monthCombo.addItem(fullMonth);
                 monthCombo.setSelectedItem(fullMonth);
+                
+                // Clear the existing PDFs for this month
+                String shortMonth = getFormattedMonth();
+                String outputDir = System.getProperty("user.home")
+                        + java.io.File.separator + "SalarySlips"
+                        + java.io.File.separator + shortMonth;
+                java.io.File dir = new java.io.File(outputDir);
+                if (dir.exists() && dir.isDirectory()) {
+                    java.io.File[] files = dir.listFiles((d, name) -> name.toLowerCase().endsWith(".pdf"));
+                    if (files != null) {
+                        for (java.io.File f : files) {
+                            f.delete();
+                        }
+                        Utils.LogUtils.info("Cleared {} existing PDFs from {}", files.length, outputDir);
+                    }
+                }
             }
 
             // Clear existing table data and inject parsed CSV rows
@@ -919,6 +938,29 @@ public class SalarySlipGenerator extends JFrame {
             pendingCountLbl.setText(String.valueOf(pending));
         if (mailsSentCountLbl != null)
             mailsSentCountLbl.setText(String.valueOf(sent));
+            
+        updateSendAllButtonState();
+    }
+
+    private void updateSendAllButtonState() {
+        if (sendAllBtn == null || model == null) return;
+        
+        String month = getFormattedMonth();
+        int pendingRecipients = 0;
+        for (int i = 0; i < table.getRowCount(); i++) {
+            String empId = (String) model.getValueAt(table.convertRowIndexToModel(i), 0);
+            if (!Utils.MailUtil.isSent(empId, month)) {
+                pendingRecipients++;
+            }
+        }
+        
+        if (pendingRecipients == 0 && table.getRowCount() > 0) {
+            sendAllBtn.setText("Resend All");
+            sendAllBtn.setBackground(ORANGE);
+        } else {
+            sendAllBtn.setText("Send Mail to All");
+            sendAllBtn.setBackground(GREEN);
+        }
     }
 
     private String formatMonthFull(String shortMonth) {
@@ -1278,7 +1320,7 @@ public class SalarySlipGenerator extends JFrame {
         // Right Side: Send Mail to All Button
         JPanel row1 = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
         row1.setOpaque(false);
-        JButton sendAllBtn = new JButton("Send Mail to All");
+        sendAllBtn = new JButton("Send Mail to All");
         sendAllBtn.setIcon(createFontIcon("\uE724", 14, WHITE));
         sendAllBtn.setIconTextGap(8);
         sendAllBtn.setFont(FONT_BOLD);
@@ -1300,16 +1342,36 @@ public class SalarySlipGenerator extends JFrame {
                     return;
             }
 
+            boolean isResend = sendAllBtn.getText().equals("Resend All");
+            String month = getFormattedMonth();
+            int plannedRecipients = 0;
+            
+            for (int i = 0; i < table.getRowCount(); i++) {
+                String empId = (String) model.getValueAt(table.convertRowIndexToModel(i), 0);
+                if (!isResend && Utils.MailUtil.isSent(empId, month)) continue;
+                plannedRecipients++;
+            }
+            
+            if (plannedRecipients == 0) {
+                 JOptionPane.showMessageDialog(card, "No slips pending to send.", "Info", JOptionPane.INFORMATION_MESSAGE);
+                 return;
+            }
+
+            int confirm = JOptionPane.showConfirmDialog(card, 
+                 "You are about to send emails to " + plannedRecipients + " employees. Continue?", 
+                 "Confirm Send", JOptionPane.YES_NO_OPTION);
+            
+            if (confirm != JOptionPane.YES_OPTION) return;
+
             int totalSent = 0;
             int totalFailed = 0;
             int totalSkipped = 0;
-            String month = getFormattedMonth();
 
             for (int i = 0; i < table.getRowCount(); i++) {
                 int modelRow = table.convertRowIndexToModel(i);
                 String empId = (String) model.getValueAt(modelRow, 0);
 
-                if (Utils.MailUtil.isSent(empId, month)) {
+                if (!isResend && Utils.MailUtil.isSent(empId, month)) {
                     totalSkipped++;
                     continue; // Skip already sent
                 }
@@ -1359,11 +1421,19 @@ public class SalarySlipGenerator extends JFrame {
         // Button hover effect
         sendAllBtn.addMouseListener(new MouseAdapter() {
             public void mouseEntered(MouseEvent e) {
-                sendAllBtn.setBackground(new Color(34, 197, 94));
+                if (sendAllBtn.getText().equals("Resend All")) {
+                    sendAllBtn.setBackground(new Color(245, 158, 11)); // Lighter orange
+                } else {
+                    sendAllBtn.setBackground(new Color(34, 197, 94)); // Lighter green
+                }
             }
 
             public void mouseExited(MouseEvent e) {
-                sendAllBtn.setBackground(GREEN);
+                if (sendAllBtn.getText().equals("Resend All")) {
+                    sendAllBtn.setBackground(ORANGE);
+                } else {
+                    sendAllBtn.setBackground(GREEN);
+                }
             }
         });
         row1.add(sendAllBtn);
