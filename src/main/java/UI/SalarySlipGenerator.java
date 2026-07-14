@@ -273,8 +273,10 @@ public class SalarySlipGenerator extends JFrame {
 
                             // Check if validation found any errors (e.g. missing IDs, missing names)
                             if (!result.errors.isEmpty()) {
-                                for (String err : result.errors) {
-                                    failedRecords.add(new FailedRecord("Unknown", "Unknown", err, "Correct CSV data"));
+                                for (Services.CsvReaderService.CsvError err : result.errors) {
+                                    String empId = (err.eCode == null || err.eCode.isEmpty()) ? "Unknown" : err.eCode;
+                                    String empName = (err.name == null || err.name.isEmpty()) ? "Unknown" : err.name;
+                                    failedRecords.add(new FailedRecord(empId, empName, err.reason, "Correct CSV data"));
                                 }
                                 showFailedRecordsDialog();
                             } else {
@@ -507,15 +509,39 @@ public class SalarySlipGenerator extends JFrame {
         JTable errTable = new JTable(errModel);
         errTable.setRowHeight(35);
         errTable.setFont(FONT_TABLE_CELL);
+        errTable.getColumnModel().getColumn(0).setPreferredWidth(100);
+        errTable.getColumnModel().getColumn(1).setPreferredWidth(150);
+        errTable.getColumnModel().getColumn(2).setPreferredWidth(350);
+        errTable.getColumnModel().getColumn(3).setPreferredWidth(150);
         errTable.getTableHeader().setFont(FONT_TABLE_HEAD);
         errTable.getTableHeader().setBackground(TABLE_HEADER_BG);
         errTable.getTableHeader().setForeground(WHITE);
+        
+        DefaultTableCellRenderer errHeaderRenderer = new DefaultTableCellRenderer() {
+            public Component getTableCellRendererComponent(JTable t, Object val,
+                    boolean sel, boolean foc, int row, int col) {
+                JLabel lbl = (JLabel) super.getTableCellRendererComponent(t, val, sel, foc, row, col);
+                lbl.setForeground(WHITE);
+                lbl.setBackground(TABLE_HEADER_BG);
+                lbl.setHorizontalAlignment(SwingConstants.LEFT);
+                lbl.setBorder(BorderFactory.createEmptyBorder(0, 8, 0, 8));
+                return lbl;
+            }
+        };
+        for (int i = 0; i < errTable.getColumnCount(); i++) {
+            errTable.getColumnModel().getColumn(i).setHeaderRenderer(errHeaderRenderer);
+        }
+
         errTable.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
             public Component getTableCellRendererComponent(JTable t, Object val,
                     boolean sel, boolean foc, int row, int col) {
                 Component c = super.getTableCellRendererComponent(t, val, sel, foc, row, col);
                 if (c instanceof JLabel) {
-                    ((JLabel) c).setBorder(BorderFactory.createEmptyBorder(0, 8, 0, 8));
+                    JLabel lbl = (JLabel) c;
+                    lbl.setBorder(BorderFactory.createEmptyBorder(0, 8, 0, 8));
+                    if (val != null) {
+                        lbl.setToolTipText(val.toString());
+                    }
                     if (col == 2) c.setForeground(RED);
                     else c.setForeground(TEXT_BODY);
                 }

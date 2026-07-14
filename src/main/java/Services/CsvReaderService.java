@@ -83,6 +83,18 @@ public class CsvReaderService {
         }
     }
 
+    public static class CsvError {
+        public String eCode;
+        public String name;
+        public String reason;
+
+        public CsvError(String eCode, String name, String reason) {
+            this.eCode = eCode;
+            this.name = name;
+            this.reason = reason;
+        }
+    }
+
     /**
      * Wrapper class to hold both the parsed table data and any validation errors
      * found.
@@ -90,9 +102,9 @@ public class CsvReaderService {
     public static class CsvParseResult {
         public Object[][] rows;
         public List<EmployeeSalary> employees;
-        public List<String> errors;
+        public List<CsvError> errors;
 
-        public CsvParseResult(Object[][] rows, List<EmployeeSalary> employees, List<String> errors) {
+        public CsvParseResult(Object[][] rows, List<EmployeeSalary> employees, List<CsvError> errors) {
             this.rows = rows;
             this.employees = employees;
             this.errors = errors;
@@ -166,7 +178,7 @@ public class CsvReaderService {
     public static CsvParseResult parsePayrollCsv(String filePath) throws IOException {
         List<Object[]> rows = new ArrayList<>();
         List<EmployeeSalary> employees = new ArrayList<>();
-        List<String> errors = new ArrayList<>();
+        List<CsvError> errors = new ArrayList<>();
 
         String[] expectedHeaders = {
             "month", "sr.no.", "e.code", "name", "doj", "total basic", "total hra", "total spl. allowance", 
@@ -284,32 +296,32 @@ public class CsvReaderService {
 
                 if (emp.eCode.isEmpty()) {
                     String err = "Row " + rowNum + ": Missing Employee ID.";
-                    errors.add(err);
+                    errors.add(new CsvError(emp.eCode, rawName, err));
                     Utils.LogUtils.warn("CSV Parse Warning - {}", err);
                 }
                 if (rawName.isEmpty()) {
                     String err = "Row " + rowNum + ": Missing Employee Name for E.Code " + emp.eCode;
-                    errors.add(err);
+                    errors.add(new CsvError(emp.eCode, emp.name, err));
                     Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
                 }
                 if (rawBasic.isEmpty() && rawTotalBasic.isEmpty()) {
                     String err = "Row " + rowNum + ": Missing Basic Salary for E.Code " + emp.eCode;
-                    errors.add(err);
+                    errors.add(new CsvError(emp.eCode, emp.name, err));
                     Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
                 }
                 if (rawNetSalary.isEmpty()) {
                     String err = "Row " + rowNum + ": Missing Net Salary for E.Code " + emp.eCode;
-                    errors.add(err);
+                    errors.add(new CsvError(emp.eCode, emp.name, err));
                     Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
                 }
                 if (emp.email.isEmpty() || !emp.email.contains("@")) {
                     String err = "Row " + rowNum + ": Missing or invalid Email for E.Code " + emp.eCode;
-                    errors.add(err);
+                    errors.add(new CsvError(emp.eCode, emp.name, err));
                     Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
                 }
                 if (rawDesignation.isEmpty()) {
                     String err = "Row " + rowNum + ": Missing Designation for E.Code " + emp.eCode;
-                    errors.add(err);
+                    errors.add(new CsvError(emp.eCode, emp.name, err));
                     Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
                 }
 
@@ -341,28 +353,28 @@ public class CsvReaderService {
                 int calculatedGross = totalBasic + totalHra + totalSplAllowance + totalKra;
                 if (Math.abs(grossSalary - calculatedGross) > 2) {
                     String err = "Row " + rowNum + ": Gross Salary mismatch for E.Code " + emp.eCode + " (Calc: " + calculatedGross + ", Found: " + grossSalary + ")";
-                    errors.add(err);
+                    errors.add(new CsvError(emp.eCode, emp.name, err));
                     Utils.LogUtils.logHrWarning("Reconciliation Warning - " + err);
                 }
 
                 int calculatedNetSalary = basic + hra + splAllowance + kra + performanceBonus + officeExpense + leavePayment;
                 if (Math.abs(netSalary - calculatedNetSalary) > 2) {
                     String err = "Row " + rowNum + ": Net Salary mismatch for E.Code " + emp.eCode + " (Calc: " + calculatedNetSalary + ", Found: " + netSalary + ")";
-                    errors.add(err);
+                    errors.add(new CsvError(emp.eCode, emp.name, err));
                     Utils.LogUtils.logHrWarning("Reconciliation Warning - " + err);
                 }
 
                 int calculatedDeduction = pt + loanDeducted + tds;
                 if (Math.abs(totalDeduction - calculatedDeduction) > 2) {
                     String err = "Row " + rowNum + ": Total Deduction mismatch for E.Code " + emp.eCode + " (Calc: " + calculatedDeduction + ", Found: " + totalDeduction + ")";
-                    errors.add(err);
+                    errors.add(new CsvError(emp.eCode, emp.name, err));
                     Utils.LogUtils.logHrWarning("Reconciliation Warning - " + err);
                 }
 
                 int calculatedNetPay = netSalary - totalDeduction;
                 if (Math.abs(netPay - calculatedNetPay) > 2) {
                     String err = "Row " + rowNum + ": Net Pay mismatch for E.Code " + emp.eCode + " (Calc: " + calculatedNetPay + ", Found: " + netPay + ")";
-                    errors.add(err);
+                    errors.add(new CsvError(emp.eCode, emp.name, err));
                     Utils.LogUtils.logHrWarning("Reconciliation Warning - " + err);
                 }
 
