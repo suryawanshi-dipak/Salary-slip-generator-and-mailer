@@ -646,12 +646,13 @@ public class SalarySlipGenerator extends JFrame {
             org.apache.pdfbox.pdmodel.PDDocument document = org.apache.pdfbox.Loader.loadPDF(new java.io.File(pdfPath),
                     password);
             org.apache.pdfbox.rendering.PDFRenderer pdfRenderer = new org.apache.pdfbox.rendering.PDFRenderer(document);
-            // Render first page at 150 DPI for preview
-            java.awt.image.BufferedImage bim = pdfRenderer.renderImageWithDPI(0, 150,
+            // Render first page at 300 DPI for high-quality preview
+            java.awt.image.BufferedImage bim = pdfRenderer.renderImageWithDPI(0, 300,
                     org.apache.pdfbox.rendering.ImageType.RGB);
             document.close();
 
-            JDialog previewDialog = new JDialog(this, "PDF Preview", true);
+            JFrame previewDialog = new JFrame("PDF Preview");
+            previewDialog.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
             previewDialog.setSize(550, 650); // Smaller window size
             previewDialog.setLocationRelativeTo(null); // Center on screen
             previewDialog.setLayout(new BorderLayout(10, 10));
@@ -665,15 +666,36 @@ public class SalarySlipGenerator extends JFrame {
             selectLbl.setForeground(TEXT_HEADING);
             topPanel.add(selectLbl);
 
-            // Scale image to fit within the smaller window (e.g. 500px height)
-            final int baseHeight = 500;
+            // Setup scaling variables
             final double[] zoomFactor = {1.0};
-            java.awt.Image scaledImage = bim.getScaledInstance(-1, baseHeight, java.awt.Image.SCALE_SMOOTH);
 
-            // Center Image
-            JLabel imageLabel = new JLabel(new ImageIcon(scaledImage));
+            // Initial Image (before layout)
+            java.awt.Image initialImg = bim.getScaledInstance(-1, 500, java.awt.Image.SCALE_SMOOTH);
+            JLabel imageLabel = new JLabel(new ImageIcon(initialImg));
             imageLabel.setHorizontalAlignment(SwingConstants.CENTER);
             imageLabel.setVerticalAlignment(SwingConstants.CENTER);
+            
+            JScrollPane scrollPane = new JScrollPane(imageLabel);
+            
+            Runnable rescaleImage = () -> {
+                int aw = scrollPane.getWidth() - 10;
+                int ah = scrollPane.getHeight() - 10;
+                if (aw > 50 && ah > 50) {
+                    double scaleX = (double) aw / bim.getWidth();
+                    double scaleY = (double) ah / bim.getHeight();
+                    double baseScale = Math.min(scaleX, scaleY);
+                    
+                    int newW = (int) (bim.getWidth() * baseScale * zoomFactor[0]);
+                    int newH = (int) (bim.getHeight() * baseScale * zoomFactor[0]);
+                    
+                    if (newW > 10 && newH > 10) {
+                        java.awt.Image newImg = bim.getScaledInstance(newW, newH, java.awt.Image.SCALE_FAST);
+                        imageLabel.setIcon(new ImageIcon(newImg));
+                        imageLabel.revalidate();
+                        imageLabel.repaint();
+                    }
+                }
+            };
             
             // Add zoom functionality
             imageLabel.addMouseWheelListener(e -> {
@@ -683,21 +705,20 @@ public class SalarySlipGenerator extends JFrame {
                     } else {
                         zoomFactor[0] /= 1.1; // Zoom out
                     }
-                    int newHeight = (int) (baseHeight * zoomFactor[0]);
-                    // Limit zoom
-                    if (newHeight > 100 && newHeight < 5000) {
-                        java.awt.Image newImage = bim.getScaledInstance(-1, newHeight, java.awt.Image.SCALE_FAST);
-                        imageLabel.setIcon(new ImageIcon(newImage));
-                        imageLabel.revalidate();
-                        imageLabel.repaint();
-                    }
+                    rescaleImage.run();
                 }
             });
 
-            JScrollPane scrollPane = new JScrollPane(imageLabel);
             // Increase scroll speed
             scrollPane.getVerticalScrollBar().setUnitIncrement(16);
             scrollPane.setBorder(BorderFactory.createLineBorder(new Color(218, 224, 233)));
+            
+            // Add resize listener to dynamically fit the PDF
+            scrollPane.addComponentListener(new java.awt.event.ComponentAdapter() {
+                public void componentResized(java.awt.event.ComponentEvent evt) {
+                    rescaleImage.run();
+                }
+            });
             
             JPanel centerPanel = new JPanel(new BorderLayout());
             centerPanel.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10));
@@ -939,11 +960,11 @@ public class SalarySlipGenerator extends JFrame {
         card.add(scroll, BorderLayout.CENTER);
 
         // -- Bottom Action Panel (Send All & Logs) --
-        JPanel bottomPanel = new JPanel();
-        bottomPanel.setLayout(new BoxLayout(bottomPanel, BoxLayout.Y_AXIS));
+        JPanel bottomPanel = new JPanel(new BorderLayout());
         bottomPanel.setOpaque(false);
+        bottomPanel.setBorder(BorderFactory.createEmptyBorder(12, 0, 0, 0)); // Add top spacing to the whole panel
 
-        // Row 1: Send Mail to All Button
+        // Right Side: Send Mail to All Button
         JPanel row1 = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
         row1.setOpaque(false);
         JButton sendAllBtn = new JButton("Send Mail to All");
@@ -1011,10 +1032,10 @@ public class SalarySlipGenerator extends JFrame {
         });
         row1.add(sendAllBtn);
 
-        // Row 2: Log Toggle Switch & View Log Buttons
-        JPanel row2 = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        // Left Side: Log Toggle Switch & View Log Buttons
+        JPanel row2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
         row2.setOpaque(false);
-        row2.setBorder(BorderFactory.createEmptyBorder(12, 0, 0, 0)); // Spacing between row1 and row2
+        // Removed the extra border since they are now on the same line
 
         // Custom pill-shaped Switch Button matching the user's design!
         SwitchButton toggleLogBtn = new SwitchButton();
@@ -1042,8 +1063,8 @@ public class SalarySlipGenerator extends JFrame {
         viewWarningBtn.setFont(new Font("Segoe UI", Font.BOLD, 12));
         row2.add(viewWarningBtn);
 
-        bottomPanel.add(row1);
-        bottomPanel.add(row2);
+        bottomPanel.add(row2, BorderLayout.WEST); // Left side
+        bottomPanel.add(row1, BorderLayout.EAST); // Right side
         card.add(bottomPanel, BorderLayout.SOUTH);
 
         return card;
