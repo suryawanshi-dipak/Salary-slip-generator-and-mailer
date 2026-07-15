@@ -18,18 +18,20 @@ public class LogUtils {
 
     static {
         try {
-            java.io.File devLogDir = new java.io.File("Logs/Developer_Logs");
+            // Logs folder lives alongside the SalarySlips output folder under user.home
+            String logsRoot = System.getProperty("user.home") + java.io.File.separator + "Logs";
+            java.io.File devLogDir = new java.io.File(logsRoot + java.io.File.separator + "Developer_Logs");
             if (!devLogDir.exists()) {
                 devLogDir.mkdirs();
             }
-            java.io.File hrLogDir = new java.io.File("Logs/HR_Logs");
+            java.io.File hrLogDir = new java.io.File(logsRoot + java.io.File.separator + "HR_Logs");
             if (!hrLogDir.exists()) {
                 hrLogDir.mkdirs();
             }
-            
+
             String timestamp = LocalDateTime.now().format(FILE_DATE_FORMATTER);
-            String devFileName = "Logs/Developer_Logs/app-" + timestamp + ".log";
-            String hrFileName = "Logs/HR_Logs/hr_warnings-" + timestamp + ".log";
+            String devFileName = devLogDir.getPath() + java.io.File.separator + "app-" + timestamp + ".log";
+            String hrFileName = hrLogDir.getPath() + java.io.File.separator + "hr_warnings-" + timestamp + ".log";
             
             fileWriter = new java.io.PrintWriter(new java.io.FileWriter(devFileName, true), true);
             hrFileWriter = new java.io.PrintWriter(new java.io.FileWriter(hrFileName, true), true);
