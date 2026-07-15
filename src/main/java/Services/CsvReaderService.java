@@ -329,6 +329,8 @@ public class CsvReaderService {
                     fileMonth = emp.month;
                     Utils.LogUtils.info("Payroll month detected: {}", fileMonth);
                 } else if (!fileMonth.equals(emp.month)) {
+                    String err = "Data Error - Row " + rowNum + ": The payroll month for this employee (" + emp.month + ") conflicts with the overall file month (" + fileMonth + "). Please ensure all employees have the same month.";
+                    Utils.LogUtils.logHrWarning(err);
                     throw new IllegalArgumentException("Conflicting run month on row " + rowNum + ": expected "
                             + fileMonth + " but found " + emp.month);
                 }
@@ -344,7 +346,7 @@ public class CsvReaderService {
                 if (emp.eCode.isEmpty()) {
                     String err = "Row " + rowNum + ": Missing Employee ID.";
                     errors.add(new CsvError(emp.eCode, rawName, err));
-                    Utils.LogUtils.warn("CSV Parse Warning - {}", err);
+                    Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
                 } else if (!seenECodes.add(emp.eCode)) {
                     // FR-02: E.Code unique validation
                     String err = "Row " + rowNum + ": Duplicate Employee ID found: " + emp.eCode;
@@ -498,6 +500,7 @@ public class CsvReaderService {
 
         } catch (IOException e) {
             Utils.LogUtils.error("Error reading CSV file {}: {}", filePath, e.getMessage(), e);
+            Utils.LogUtils.logHrWarning("File Error: Unable to read the payroll file. Please ensure the file is in a valid CSV format and is not currently open in another program (like Excel).");
             throw e;
         }
         Utils.LogUtils.info(
