@@ -380,6 +380,32 @@ public class CsvReaderService {
                     Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
                 }
 
+                // DOJ vs Run Month Validation
+                if (emp.doj == null || emp.doj.trim().isEmpty()) {
+                    String err = "Row " + rowNum + ": Missing Date of Joining for E.Code " + emp.eCode;
+                    errors.add(new CsvError(emp.eCode, emp.name, err));
+                    Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
+                } else {
+                    try {
+                        java.time.format.DateTimeFormatter monthFormat = java.time.format.DateTimeFormatter.ofPattern("MMM-yy", java.util.Locale.ENGLISH);
+                        java.time.format.DateTimeFormatter dojFormat = java.time.format.DateTimeFormatter.ofPattern("d-MMM-yy", java.util.Locale.ENGLISH);
+                        
+                        java.time.YearMonth runMonth = java.time.YearMonth.parse(emp.month, monthFormat);
+                        java.time.LocalDate dojDate = java.time.LocalDate.parse(emp.doj.trim(), dojFormat);
+                        java.time.YearMonth dojMonth = java.time.YearMonth.from(dojDate);
+                        
+                        if (runMonth.isBefore(dojMonth)) {
+                            String err = "Row " + rowNum + ": Run month (" + emp.month + ") is before Date of Joining (" + emp.doj + ")";
+                            errors.add(new CsvError(emp.eCode, emp.name, err));
+                            Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
+                        }
+                    } catch (Exception e) {
+                        String err = "Row " + rowNum + ": Invalid Date format for DOJ (" + emp.doj + ") or Month (" + emp.month + ")";
+                        errors.add(new CsvError(emp.eCode, emp.name, err));
+                        Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
+                    }
+                }
+
                 // Reconciliation check
                 int totalBasic = parseInteger(emp.totalBasic);
                 int totalHra = parseInteger(emp.totalHra);

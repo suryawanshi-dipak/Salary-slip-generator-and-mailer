@@ -250,96 +250,116 @@ public class MailUtil {
             return false;
         }
 
-        String subject = "Salary Slip for " + month;
-        String bodyText = "Dear " + name + ",\n\n"
-                + "Please find attached your salary slip for " + month + ".\n\n"
-                + "Note: This document is password protected. The password is your Employee ID followed by your Date of Joining (DDMMYYYY).\n"
-                + "Example: If your ID is VT0001 and DOJ is 01-Apr-2019, the password is VT000101042019.\n\n"
-                + "Regards,\nHR Department";
-
-        String host = getSmtpHost();
-        String port = getSmtpPort();
-        String from = getSmtpFrom();
-        String user = getSmtpUser();
-
-        Properties props = new Properties();
-        props.put("mail.smtp.auth", "true");
-        props.put("mail.smtp.host", host);
-        props.put("mail.smtp.port", port);
-        if (isSmtpSecure()) {
-            // Port 465: implicit SSL
-            props.put("mail.smtp.ssl.enable", "true");
-            props.put("mail.smtp.socketFactory.port", port);
-            props.put("mail.smtp.socketFactory.class", "javax.net.ssl.SSLSocketFactory");
-        } else {
-            // Port 587: STARTTLS
-            props.put("mail.smtp.starttls.enable", "true");
-        }
-        Utils.LogUtils.info("Initializing SMTP session using host {} on port {}", host, port);
-        Session session = Session.getInstance(props, new Authenticator() {
-            protected PasswordAuthentication getPasswordAuthentication() {
-                return new PasswordAuthentication(user, smtpPassword);
-            }
-        });
-
-        int attempts = 0;
-        int maxAttempts = 2;
-        boolean success = false;
-        Utils.LogUtils.debug("Maximum email retry attempts configured: {}", maxAttempts);
-        while (attempts < maxAttempts) {
+        File encryptedFile = null;
+        try {
             try {
-                Message message = new MimeMessage(session);
-                message.setFrom(new InternetAddress(from));
-                message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(email));
-                message.setSubject(subject);
-
-                Multipart multipart = new MimeMultipart();
-
-                MimeBodyPart messageBodyPart = new MimeBodyPart();
-                messageBodyPart.setText(bodyText);
-                multipart.addBodyPart(messageBodyPart);
-
-                MimeBodyPart attachmentPart = new MimeBodyPart();
-                attachmentPart.attachFile(f);
-                multipart.addBodyPart(attachmentPart);
-
-                message.setContent(multipart);
-                Utils.LogUtils.debug("Sending email to Employee {} at {}", empId, email);
-                Transport.send(message);
-
-                success = true;
-                Utils.LogUtils.info("Email dispatched successfully for Employee {}", empId);
-                break;
-
-            } catch (AuthenticationFailedException e) {
-                Utils.LogUtils.error("Failed to send email to Employee {} due to SMTP Authentication failure", empId,
-                        e);
-                logRun(month, empId, "Failed", "SMTP Authentication failed");
-                return false;
+                encryptedFile = File.createTempFile("slip_" + empId + "_", ".pdf");
+                String password = Utils.PdfUtil.generatePassword(empId, doj);
+                Utils.PdfUtil.encryptPdf(f.getAbsolutePath(), encryptedFile.getAbsolutePath(), password);
             } catch (Exception e) {
-                attempts++;
-                Utils.LogUtils.warn("Attempt {} failed to send email to Employee {}: {}", attempts, empId,
-                        e.getMessage());
-                if (attempts >= maxAttempts) {
-                    Utils.LogUtils.error("Max retry attempts reached. Failed to send email to Employee {}: {}", empId,
-                            e.getMessage(), e);
-                    logRun(month, empId, "Failed", "SMTP Error: " + e.getMessage());
-                    return false;
+                Utils.LogUtils.error("Failed to encrypt PDF for Employee {}", empId, e);
+                logRun(month, empId, "Failed", "PDF encryption failed");
+                return false;
+            }
+
+            String subject = "Salary Slip for " + month;
+            String bodyText = "Dear " + name + ",\n\n"
+                    + "Please find attached your salary slip for " + month + ".\n\n"
+                    + "Note: This document is password protected. The password is your Employee ID followed by your Date of Joining (DDMMYYYY).\n"
+                    + "Example: If your ID is VT0001 and DOJ is 01-Apr-2019, the password is VT000101042019.\n\n"
+                    + "Regards,\nHR Department";
+
+            String host = getSmtpHost();
+            String port = getSmtpPort();
+            String from = getSmtpFrom();
+            String user = getSmtpUser();
+
+            Properties props = new Properties();
+            props.put("mail.smtp.auth", "true");
+            props.put("mail.smtp.host", host);
+            props.put("mail.smtp.port", port);
+            if (isSmtpSecure()) {
+                // Port 465: implicit SSL
+                props.put("mail.smtp.ssl.enable", "true");
+                props.put("mail.smtp.socketFactory.port", port);
+                props.put("mail.smtp.socketFactory.class", "javax.net.ssl.SSLSocketFactory");
+            } else {
+                // Port 587: STARTTLS
+                props.put("mail.smtp.starttls.enable", "true");
+            }
+            Utils.LogUtils.info("Initializing SMTP session using host {} on port {}", host, port);
+            Session session = Session.getInstance(props, new Authenticator() {
+                protected PasswordAuthentication getPasswordAuthentication() {
+                    return new PasswordAuthentication(user, smtpPassword);
                 }
+            });
+
+            int attempts = 0;
+            int maxAttempts = 2;
+            boolean success = false;
+            Utils.LogUtils.debug("Maximum email retry attempts configured: {}", maxAttempts);
+            while (attempts < maxAttempts) {
                 try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException ie) {
-                    Utils.LogUtils.warn("Retry wait interrupted for Employee {}", empId);
+                    Message message = new MimeMessage(session);
+                    message.setFrom(new InternetAddress(from));
+                    message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(email));
+                    message.setSubject(subject);
+
+                    Multipart multipart = new MimeMultipart();
+
+                    MimeBodyPart messageBodyPart = new MimeBodyPart();
+                    messageBodyPart.setText(bodyText);
+                    multipart.addBodyPart(messageBodyPart);
+
+                    MimeBodyPart attachmentPart = new MimeBodyPart();
+                    attachmentPart.attachFile(encryptedFile);
+                    multipart.addBodyPart(attachmentPart);
+
+                    message.setContent(multipart);
+                    Utils.LogUtils.debug("Sending email to Employee {} at {}", empId, email);
+                    Transport.send(message);
+
+                    success = true;
+                    Utils.LogUtils.info("Email dispatched successfully for Employee {}", empId);
+                    break;
+
+                } catch (AuthenticationFailedException e) {
+                    Utils.LogUtils.error("Failed to send email to Employee {} due to SMTP Authentication failure",
+                            empId,
+                            e);
+                    logRun(month, empId, "Failed", "SMTP Authentication failed");
+                    return false;
+                } catch (Exception e) {
+                    attempts++;
+                    Utils.LogUtils.warn("Attempt {} failed to send email to Employee {}: {}", attempts, empId,
+                            e.getMessage());
+                    if (attempts >= maxAttempts) {
+                        Utils.LogUtils.error("Max retry attempts reached. Failed to send email to Employee {}: {}",
+                                empId,
+                                e.getMessage(), e);
+                        logRun(month, empId, "Failed", "SMTP Error: " + e.getMessage());
+                        return false;
+                    }
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException ie) {
+                        Utils.LogUtils.warn("Retry wait interrupted for Employee {}", empId);
+                    }
                 }
             }
-        }
 
-        if (success) {
-            markAsSent(empId, month);
-            Utils.LogUtils.info("Successfully sent email with attachment to: {}", email);
-            logRun(month, empId, "Sent", null);
-        }
+            if (success) {
+                markAsSent(empId, month);
+                Utils.LogUtils.info("Successfully sent email with attachment to: {}", email);
+                logRun(month, empId, "Sent", null);
+            }
 
-        return success;
+            return success;
+
+        } finally {
+            if (encryptedFile != null && encryptedFile.exists()) {
+                encryptedFile.delete();
+            }
+        }
     }
 }

@@ -132,7 +132,7 @@ public class SalarySlipGenerator extends JFrame {
     private Object[][] data = {};
 
     // Column headers for the table
-    private String[] cols = { "Emp ID", "Employee Name", "Department",
+    private String[] cols = { "Emp ID", "Employee Name", "Designation",
             "Basic Salary", "Net Salary", "Month",
             "Slip Status", "Mail Status", "Action" };
 
@@ -236,11 +236,26 @@ public class SalarySlipGenerator extends JFrame {
             if (!currentRawCsvData.isEmpty()) {
                 String fileMonth = currentRawCsvData.get(0).month;
                 String fullMonth = formatMonthFull(fileMonth);
-                
+
+                try {
+                    java.time.format.DateTimeFormatter monthFormat = java.time.format.DateTimeFormatter.ofPattern("MMM-yy", java.util.Locale.ENGLISH);
+                    java.time.YearMonth parsedRunMonth = java.time.YearMonth.parse(fileMonth, monthFormat);
+                    java.time.YearMonth currentMonth = java.time.YearMonth.now();
+
+                    if (!parsedRunMonth.isBefore(currentMonth)) {
+                        JOptionPane.showMessageDialog(this,
+                                "Cannot process salary slips for the current or future months. Please upload a CSV for a past month.",
+                                "Invalid Run Month", JOptionPane.ERROR_MESSAGE);
+                        return;
+                    }
+                } catch (Exception e) {
+                    Utils.LogUtils.error("Failed to parse file month: {}", e.getMessage());
+                }
+
                 monthCombo.removeAllItems();
                 monthCombo.addItem(fullMonth);
                 monthCombo.setSelectedItem(fullMonth);
-                
+
                 // Clear the existing PDFs for this month
                 String shortMonth = getFormattedMonth();
                 String outputDir = System.getProperty("user.home")
@@ -379,7 +394,9 @@ public class SalarySlipGenerator extends JFrame {
 
                     if (firstEmpMonth != null && !firstEmpMonth.equalsIgnoreCase(formattedMonth)) {
                         JOptionPane.showMessageDialog(this,
-                                "Run month mismatch! Selected month (" + formattedMonth + ") does not match the CSV file's month (" + firstEmpMonth + ").\nPlease check your selection.",
+                                "Run month mismatch! Selected month (" + formattedMonth
+                                        + ") does not match the CSV file's month (" + firstEmpMonth
+                                        + ").\nPlease check your selection.",
                                 "Generation Blocked",
                                 JOptionPane.ERROR_MESSAGE);
                         return;
@@ -938,13 +955,14 @@ public class SalarySlipGenerator extends JFrame {
             pendingCountLbl.setText(String.valueOf(pending));
         if (mailsSentCountLbl != null)
             mailsSentCountLbl.setText(String.valueOf(sent));
-            
+
         updateSendAllButtonState();
     }
 
     private void updateSendAllButtonState() {
-        if (sendAllBtn == null || model == null) return;
-        
+        if (sendAllBtn == null || model == null)
+            return;
+
         String month = getFormattedMonth();
         int pendingRecipients = 0;
         for (int i = 0; i < table.getRowCount(); i++) {
@@ -953,7 +971,7 @@ public class SalarySlipGenerator extends JFrame {
                 pendingRecipients++;
             }
         }
-        
+
         if (pendingRecipients == 0 && table.getRowCount() > 0) {
             sendAllBtn.setText("Resend All");
             sendAllBtn.setBackground(ORANGE);
@@ -965,8 +983,10 @@ public class SalarySlipGenerator extends JFrame {
 
     private String formatMonthFull(String shortMonth) {
         try {
-            java.time.format.DateTimeFormatter in = java.time.format.DateTimeFormatter.ofPattern("MMM-yy", java.util.Locale.ENGLISH);
-            java.time.format.DateTimeFormatter out = java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy", java.util.Locale.ENGLISH);
+            java.time.format.DateTimeFormatter in = java.time.format.DateTimeFormatter.ofPattern("MMM-yy",
+                    java.util.Locale.ENGLISH);
+            java.time.format.DateTimeFormatter out = java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy",
+                    java.util.Locale.ENGLISH);
             java.time.YearMonth ym = java.time.YearMonth.parse(shortMonth, in);
             return ym.format(out);
         } catch (Exception e) {
@@ -1006,9 +1026,31 @@ public class SalarySlipGenerator extends JFrame {
             previewDialog.setLayout(new BorderLayout(10, 10));
             previewDialog.getContentPane().setBackground(BG);
 
+            try {
+                java.io.File logoFile = new java.io.File("DATA/logo.jpg");
+                if (logoFile.exists()) {
+                    previewDialog.setIconImage(new ImageIcon(logoFile.getAbsolutePath()).getImage());
+                }
+            } catch (Exception e) {
+                Utils.LogUtils.error("Could not load preview dialog logo: {}", e.getMessage(), e);
+            }
+
             // Top Panel
             JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
             topPanel.setOpaque(false);
+
+            try {
+                java.io.File logoFile = new java.io.File("DATA/logo.jpg");
+                if (logoFile.exists()) {
+                    java.awt.Image img = new ImageIcon(logoFile.getAbsolutePath()).getImage();
+                    java.awt.Image scaledImg = img.getScaledInstance(24, 24, java.awt.Image.SCALE_SMOOTH);
+                    JLabel logoLbl = new JLabel(new ImageIcon(scaledImg));
+                    topPanel.add(logoLbl);
+                }
+            } catch (Exception e) {
+                // Ignore if logo fails to load for header
+            }
+
             JLabel selectLbl = new JLabel("Previewing File: " + new java.io.File(pdfPath).getName());
             selectLbl.setFont(FONT_BOLD);
             selectLbl.setForeground(TEXT_HEADING);
@@ -1333,6 +1375,12 @@ public class SalarySlipGenerator extends JFrame {
 
         // Button action listener
         sendAllBtn.addActionListener(e -> {
+            if (!canSendSlipsForCurrentMonth()) {
+                JOptionPane.showMessageDialog(this,
+                        "Sending salary slips is restricted to the previous month only. You can only view older slips.",
+                        "Action Blocked", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
             // =========================================================
             // MAIL SENDING INTEGRATION (BATCH MODE)
             // =========================================================
@@ -1345,23 +1393,26 @@ public class SalarySlipGenerator extends JFrame {
             boolean isResend = sendAllBtn.getText().equals("Resend All");
             String month = getFormattedMonth();
             int plannedRecipients = 0;
-            
+
             for (int i = 0; i < table.getRowCount(); i++) {
                 String empId = (String) model.getValueAt(table.convertRowIndexToModel(i), 0);
-                if (!isResend && Utils.MailUtil.isSent(empId, month)) continue;
+                if (!isResend && Utils.MailUtil.isSent(empId, month))
+                    continue;
                 plannedRecipients++;
             }
-            
+
             if (plannedRecipients == 0) {
-                 JOptionPane.showMessageDialog(card, "No slips pending to send.", "Info", JOptionPane.INFORMATION_MESSAGE);
-                 return;
+                JOptionPane.showMessageDialog(card, "No slips pending to send.", "Info",
+                        JOptionPane.INFORMATION_MESSAGE);
+                return;
             }
 
-            int confirm = JOptionPane.showConfirmDialog(card, 
-                 "You are about to send emails to " + plannedRecipients + " employees. Continue?", 
-                 "Confirm Send", JOptionPane.YES_NO_OPTION);
-            
-            if (confirm != JOptionPane.YES_OPTION) return;
+            int confirm = JOptionPane.showConfirmDialog(card,
+                    "You are about to send emails to " + plannedRecipients + " employees. Continue?",
+                    "Confirm Send", JOptionPane.YES_NO_OPTION);
+
+            if (confirm != JOptionPane.YES_OPTION)
+                return;
 
             int totalSent = 0;
             int totalFailed = 0;
@@ -1806,7 +1857,24 @@ public class SalarySlipGenerator extends JFrame {
     // MAIL SENDING INTEGRATION (CORE HELPER)
     // Extracts data from the CSV row and passes it to MailUtil
     // =========================================================
+    private boolean canSendSlipsForCurrentMonth() {
+        try {
+            java.time.format.DateTimeFormatter monthFormat = java.time.format.DateTimeFormatter.ofPattern("MMM-yy", java.util.Locale.ENGLISH);
+            java.time.YearMonth runMonth = java.time.YearMonth.parse(getFormattedMonth(), monthFormat);
+            java.time.YearMonth prevMonth = java.time.YearMonth.now().minusMonths(1);
+            return runMonth.equals(prevMonth);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private boolean attemptSendSingleSlip(int modelRow) {
+        if (!canSendSlipsForCurrentMonth()) {
+            JOptionPane.showMessageDialog(this,
+                    "Sending salary slips is restricted to the previous month only. You can only view older slips.",
+                    "Action Blocked", JOptionPane.WARNING_MESSAGE);
+            return false;
+        }
         if (currentRawCsvData == null || modelRow >= currentRawCsvData.size())
             return false;
         Services.CsvReaderService.EmployeeSalary empData = currentRawCsvData.get(modelRow);

@@ -195,31 +195,9 @@ public class PdfUtil {
 
         String destPath = new File(dir, filename).getAbsolutePath();
 
-        // --- Password Generation (FR-06) ---
-        // The password is Emp ID + DOJ (in ddMMyyyy format).
-        // The source CSV now uses d-MMM-yy (e.g. 1-Apr-19), so we must parse it back
-        // into the strict format.
-        String formattedDoj = doj;
         try {
-            java.time.format.DateTimeFormatter inFormat = java.time.format.DateTimeFormatter.ofPattern("d-MMM-yy",
-                    java.util.Locale.ENGLISH);
-            java.time.format.DateTimeFormatter outFormat = java.time.format.DateTimeFormatter.ofPattern("ddMMyyyy");
-            java.time.LocalDate date = java.time.LocalDate.parse(doj, inFormat);
-            formattedDoj = date.format(outFormat);
-        } catch (Exception e) {
-            Utils.LogUtils.warn("Could not parse DOJ: {} for employee ID: {}. Falling back to unformatted string.", doj,
-                    empId);
-        }
-
-        // Final Document Password
-        String pwd = empId + formattedDoj;
-        Utils.LogUtils.debug("PDF password generated successfully for Employee ID: {}", empId);
-        try {
-            Utils.LogUtils.info("Creating encrypted PDF document for Employee ID: {}", empId);
-            WriterProperties props = new WriterProperties()
-                    .setStandardEncryption(pwd.getBytes(), pwd.getBytes(), EncryptionConstants.ALLOW_PRINTING,
-                            EncryptionConstants.ENCRYPTION_AES_128);
-            PdfWriter writer = new PdfWriter(destPath, props);
+            Utils.LogUtils.info("Creating unencrypted PDF document for Employee ID: {}", empId);
+            PdfWriter writer = new PdfWriter(destPath);
             PdfDocument pdf = new PdfDocument(writer);
             Document document = new Document(pdf);
 
@@ -434,5 +412,37 @@ public class PdfUtil {
         } catch (NumberFormatException e) {
             return 0;
         }
+    }
+
+    /**
+     * Generates the password based on Emp ID and DOJ.
+     */
+    public static String generatePassword(String empId, String doj) {
+        String formattedDoj = doj;
+        try {
+            java.time.format.DateTimeFormatter inFormat = java.time.format.DateTimeFormatter.ofPattern("d-MMM-yy",
+                    java.util.Locale.ENGLISH);
+            java.time.format.DateTimeFormatter outFormat = java.time.format.DateTimeFormatter.ofPattern("ddMMyyyy");
+            java.time.LocalDate date = java.time.LocalDate.parse(doj, inFormat);
+            formattedDoj = date.format(outFormat);
+        } catch (Exception e) {
+            Utils.LogUtils.warn("Could not parse DOJ: {} for employee ID: {}. Falling back to unformatted string.", doj,
+
+                    empId);
+        }
+        return empId + formattedDoj;
+    }
+
+    /**
+     * Encrypts an existing PDF file and saves it to a new location.
+     */
+    public static void encryptPdf(String inputPath, String outputPath, String password) throws java.io.IOException {
+        com.itextpdf.kernel.pdf.PdfReader reader = new com.itextpdf.kernel.pdf.PdfReader(inputPath);
+        WriterProperties props = new WriterProperties()
+                .setStandardEncryption(password.getBytes(), password.getBytes(), EncryptionConstants.ALLOW_PRINTING,
+                        EncryptionConstants.ENCRYPTION_AES_128);
+        PdfWriter writer = new PdfWriter(outputPath, props);
+        PdfDocument pdf = new PdfDocument(reader, writer);
+        pdf.close();
     }
 }
