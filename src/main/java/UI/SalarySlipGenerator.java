@@ -569,7 +569,7 @@ public class SalarySlipGenerator extends JFrame {
         Runnable loadLogContent = () -> {
             String selectedFile = (String) logFilesCombo.getSelectedItem();
             if (selectedFile == null) {
-                logTextArea.setText("No log files available in 'Logs/' directory.");
+                logTextArea.setText("No log files available in '" + logDir.getAbsolutePath() + "' directory.");
                 return;
             }
             java.io.File file = new java.io.File(logDir, selectedFile);
@@ -1507,7 +1507,8 @@ public class SalarySlipGenerator extends JFrame {
 
         // View Log Button
         JButton viewLogBtn = makeSmallButton("\uE9F9", "View Log", BLUE_MID, WHITE,
-                ev -> showLogDialog("Logs/Developer_Logs"));
+                ev -> showLogDialog(System.getProperty("user.home") + java.io.File.separator + "Logs"
+                        + java.io.File.separator + "Developer_Logs"));
         viewLogBtn.setPreferredSize(new Dimension(90, 30)); // Increased height
         viewLogBtn.setFont(new Font("Segoe UI", Font.BOLD, 12)); // Changed font
         row2.add(viewLogBtn);
@@ -1517,7 +1518,8 @@ public class SalarySlipGenerator extends JFrame {
 
         // View Warning Button
         JButton viewWarningBtn = makeSmallButton("\uE7BA", "View Warning", RED, WHITE,
-                ev -> showLogDialog("Logs/HR_Logs"));
+                ev -> showLogDialog(System.getProperty("user.home") + java.io.File.separator + "Logs"
+                        + java.io.File.separator + "HR_Logs"));
         viewWarningBtn.setPreferredSize(new Dimension(120, 30)); // Matched height, wider for text
         viewWarningBtn.setFont(new Font("Segoe UI", Font.BOLD, 12));
         row2.add(viewWarningBtn);
