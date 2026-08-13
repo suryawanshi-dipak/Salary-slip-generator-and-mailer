@@ -1,15 +1,13 @@
 # Salary Slip Generator
 
-Salary Slip Generator is a Java-based desktop application designed for automated payroll processing. It reads employee data from CSV files, generates password-protected PDF salary slips, and automatically emails them to employees via SMTP.
+Salary Slip Generator is a Java-based desktop application designed for automated payroll processing and distribution. As a companion tool for modern HR Management Systems, it fetches approved reimbursement and loan data directly from the HRMS backend, calculates dynamic salary slips, and distributes password-protected PDFs to employees via SMTP.
 
 ## Key Features
-- **CSV Data Ingestion**: Parses employee salary and details from standard CSV files.
-- **Dynamic Salary Calculation**: Processes earnings and deductions based on the provided input data.
-- **PDF Generation**: Creates professional, password-protected PDF salary slips. The PDF password logic utilizes the Employee ID and Date of Joining.
+- **Backend API Integration**: Directly fetches approved employee reimbursements and loan EMI data from the HRMS backend via secure API endpoints.
+- **CSV Data Ingestion**: Parses core employee salary data and personal details from standard CSV files.
 - **Automated Emailing**: Distributes the generated PDFs directly to employees via an integrated SMTP client.
-- **Desktop UI**: Features a Graphical User Interface built with Java Swing for ease of use.
-- **In-App Updater**: Includes Git-based utilities for in-app hot-swapping and updates.
-- **Integrated Logging**: Features centralized, formatted console logging for process tracking and robust error reporting.
+- **Desktop UI**: A simple Graphical User Interface built with Java Swing for generating slips and tracking delivery status.
+- **In-App Updater & Logging**: Includes Git-based utilities for in-app hot-swapping and centralized console logging for robust error reporting.
 
 ## Tech Stack
 - **Frontend**: Java Swing (Desktop UI)
@@ -41,6 +39,8 @@ Salary-slip-generator-and-mailer/
 ```
 
 ## Prerequisites & Installation
+Ensure you have **Java 25** and **Maven** installed on your system.
+
 ```bash
 # Ensure Java 25 and Maven are installed on your system
 java -version
@@ -50,15 +50,33 @@ mvn -version
 git clone https://github.com/suryawanshi-dipak/Salary-slip-generator-and-mailer.git
 cd Salary-slip-generator-and-mailer
 
-# Build the project and create a runnable fat JAR
+# Build the project to create a runnable fat JAR
 mvn clean package
 ```
 
-## Environment Variables
-This project does not require a `.env` file. SMTP credentials (email address and application-specific password) are provided securely at runtime through the application's graphical user interface.
+## Configuration
+This project relies on a `DATA/smtp.properties` file to securely store configuration.
+
+### SMTP & API Settings
+```properties
+smtp.host=sg2plzcpnl505617.prod.sin2.secureserver.net
+smtp.port=465
+smtp.user=your_email@example.com
+smtp.pass=your_password
+smtp.from=sender@example.com
+smtp.secure=true
+
+# Reimbursement API Integration Settings
+reimbursement.api.url=http://localhost:5000/api/reimbursements/payroll-export
+reimbursement.api.key=your_service_api_key_here
+
+# Loan API Integration Settings
+loan.api.url=http://localhost:5000/api/loans/payroll-export
+loan.api.key=your_service_api_key_here
+```
 
 ## Usage/Running the Application
+To run the compiled application:
 ```bash
-# Run the compiled application JAR file
 java -jar target/salary-slip-generator.jar
 ```
