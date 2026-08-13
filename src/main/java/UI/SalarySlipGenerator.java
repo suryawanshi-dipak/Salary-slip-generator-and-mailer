@@ -365,6 +365,14 @@ public class SalarySlipGenerator extends JFrame {
         refreshBtn.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
         right.add(refreshBtn);
 
+        // Fetch Reimbursements Button
+        right.add(makeHeaderButton("\uE896", "Fetch Reimbursements", BLUE_MID, WHITE,
+                e -> showReimbursementFetchDialog()));
+
+        // Fetch Loans Button
+        right.add(makeHeaderButton("\uE8A1", "Fetch Loans", BLUE_MID, WHITE,
+                e -> showLoanFetchDialog()));
+
         // Upload CSV Button
         right.add(makeHeaderButton("\uE898", "Upload CSV", UPLOAD_GREEN, WHITE,
                 e -> {
@@ -1903,6 +1911,330 @@ public class SalarySlipGenerator extends JFrame {
             failedRecords.add(new FailedRecord(empId, name, "Email Error: " + ex.getMessage(), "Verify email/SMTP"));
             return false;
         }
+    }
+
+    private void showReimbursementFetchDialog() {
+        JDialog dialog = new JDialog(this, "Fetch Reimbursement Data", true);
+        dialog.setSize(520, 340);
+        dialog.setLocationRelativeTo(this);
+        dialog.setLayout(new BorderLayout(10, 10));
+        dialog.getContentPane().setBackground(BG);
+
+        // Top Header
+        JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 20, 15));
+        topPanel.setOpaque(false);
+        JLabel titleLbl = new JLabel("Fetch Approved Reimbursements");
+        titleLbl.setFont(FONT_HEADING);
+        titleLbl.setForeground(TEXT_HEADING);
+        topPanel.add(titleLbl);
+
+        // Center Content Panel
+        JPanel centerPanel = new JPanel(new GridLayout(3, 2, 10, 12));
+        centerPanel.setOpaque(false);
+        centerPanel.setBorder(BorderFactory.createEmptyBorder(10, 24, 10, 24));
+
+        JLabel urlLbl = new JLabel("HRMS API URL:");
+        urlLbl.setFont(FONT_BOLD);
+        urlLbl.setForeground(TEXT_BODY);
+        JTextField urlField = new JTextField(Services.ReimbursementService.getApiUrl());
+        urlField.setFont(FONT);
+        urlField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(221, 221, 221), 1, true),
+                BorderFactory.createEmptyBorder(8, 12, 8, 12)));
+
+        JLabel keyLbl = new JLabel("Service API Key:");
+        keyLbl.setFont(FONT_BOLD);
+        keyLbl.setForeground(TEXT_BODY);
+        JTextField keyField = new JTextField(Services.ReimbursementService.getApiKey());
+        keyField.setFont(FONT);
+        keyField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(221, 221, 221), 1, true),
+                BorderFactory.createEmptyBorder(8, 12, 8, 12)));
+
+        JLabel monthLbl = new JLabel("Payout Month (YYYY-MM):");
+        monthLbl.setFont(FONT_BOLD);
+        monthLbl.setForeground(TEXT_BODY);
+        
+        // Determine default month
+        String defaultMonth = "";
+        if (monthCombo != null && monthCombo.getSelectedItem() != null) {
+            String shortMonth = getFormattedMonth();
+            try {
+                java.time.format.DateTimeFormatter in = java.time.format.DateTimeFormatter.ofPattern("MMM-yy", java.util.Locale.ENGLISH);
+                java.time.YearMonth ym = java.time.YearMonth.parse(shortMonth, in);
+                defaultMonth = ym.toString();
+            } catch (Exception ex) {
+                // fallback
+            }
+        }
+        if (defaultMonth.isEmpty()) {
+            defaultMonth = java.time.YearMonth.now().minusMonths(1).toString();
+        }
+        JTextField monthField = new JTextField(defaultMonth);
+        monthField.setFont(FONT);
+        monthField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(221, 221, 221), 1, true),
+                BorderFactory.createEmptyBorder(8, 12, 8, 12)));
+
+        urlField.setCaretPosition(0);
+        keyField.setCaretPosition(0);
+        monthField.setCaretPosition(0);
+
+        centerPanel.add(urlLbl);
+        centerPanel.add(urlField);
+        centerPanel.add(keyLbl);
+        centerPanel.add(keyField);
+        centerPanel.add(monthLbl);
+        centerPanel.add(monthField);
+
+        // Bottom Action Panel
+        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 24, 15));
+        bottomPanel.setOpaque(false);
+
+        JButton fetchBtn = new JButton("Fetch & Save CSV");
+        fetchBtn.setFont(FONT_BOLD);
+        fetchBtn.setForeground(WHITE);
+        fetchBtn.setBackground(GREEN);
+        fetchBtn.setBorderPainted(false);
+        fetchBtn.setFocusPainted(false);
+        fetchBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        fetchBtn.setPreferredSize(new Dimension(170, 38));
+        fetchBtn.addActionListener(e -> {
+            String url = urlField.getText().trim();
+            String key = keyField.getText().trim();
+            String month = monthField.getText().trim();
+
+            if (url.isEmpty() || key.isEmpty() || month.isEmpty()) {
+                JOptionPane.showMessageDialog(dialog, "All fields are required.", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            if (!month.matches("^\\d{4}-\\d{2}$")) {
+                JOptionPane.showMessageDialog(dialog, "Payout Month must be in YYYY-MM format (e.g. 2026-08).", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            try {
+                // Fetch claims from API
+                Services.ReimbursementService.ReimbursementResponse resp = Services.ReimbursementService.fetchClaims(url, key, month);
+                
+                if (resp.claims == null || resp.claims.isEmpty()) {
+                    JOptionPane.showMessageDialog(dialog, "No approved reimbursement claims found for month: " + month, "No Data", JOptionPane.INFORMATION_MESSAGE);
+                    return;
+                }
+
+                // Show JFileChooser to select save location
+                JFileChooser fileChooser = new JFileChooser();
+                fileChooser.setDialogTitle("Save Reimbursement CSV");
+                fileChooser.setSelectedFile(new java.io.File("reimbursements_" + month + ".csv"));
+                int userSelection = fileChooser.showSaveDialog(dialog);
+                
+                if (userSelection == JFileChooser.APPROVE_OPTION) {
+                    java.io.File fileToSave = fileChooser.getSelectedFile();
+                    Services.ReimbursementService.exportClaimsToCsv(resp.claims, fileToSave);
+                    
+                    // Persist valid settings to properties
+                    Services.ReimbursementService.saveSettings(url, key);
+
+                    JOptionPane.showMessageDialog(dialog, "CSV file saved successfully:\n" + fileToSave.getAbsolutePath(), "Success", JOptionPane.INFORMATION_MESSAGE);
+                    dialog.dispose();
+                }
+
+            } catch (Exception ex) {
+                Utils.LogUtils.error("Failed to fetch reimbursement data: {}", ex.getMessage(), ex);
+                JOptionPane.showMessageDialog(dialog, "Error: " + ex.getMessage(), "Fetch Failed", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        fetchBtn.addMouseListener(new MouseAdapter() {
+            public void mouseEntered(MouseEvent e) { fetchBtn.setBackground(GREEN.brighter()); }
+            public void mouseExited(MouseEvent e) { fetchBtn.setBackground(GREEN); }
+        });
+
+        JButton cancelBtn = new JButton("Cancel");
+        cancelBtn.setFont(FONT_BOLD);
+        cancelBtn.setForeground(WHITE);
+        cancelBtn.setBackground(RED);
+        cancelBtn.setBorderPainted(false);
+        cancelBtn.setFocusPainted(false);
+        cancelBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        cancelBtn.setPreferredSize(new Dimension(100, 38));
+        cancelBtn.addActionListener(e -> dialog.dispose());
+
+        cancelBtn.addMouseListener(new MouseAdapter() {
+            public void mouseEntered(MouseEvent e) { cancelBtn.setBackground(RED.brighter()); }
+            public void mouseExited(MouseEvent e) { cancelBtn.setBackground(RED); }
+        });
+
+        bottomPanel.add(fetchBtn);
+        bottomPanel.add(cancelBtn);
+
+        dialog.add(topPanel, BorderLayout.NORTH);
+        dialog.add(centerPanel, BorderLayout.CENTER);
+        dialog.add(bottomPanel, BorderLayout.SOUTH);
+        dialog.setVisible(true);
+    }
+
+    private void showLoanFetchDialog() {
+        JDialog dialog = new JDialog(this, "Fetch Loan EMI Data", true);
+        dialog.setSize(520, 340);
+        dialog.setLocationRelativeTo(this);
+        dialog.setLayout(new BorderLayout(10, 10));
+        dialog.getContentPane().setBackground(BG);
+
+        // Top Header
+        JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 20, 15));
+        topPanel.setOpaque(false);
+        JLabel titleLbl = new JLabel("Fetch Approved Loans / EMIs");
+        titleLbl.setFont(FONT_HEADING);
+        titleLbl.setForeground(TEXT_HEADING);
+        topPanel.add(titleLbl);
+
+        // Center Content Panel
+        JPanel centerPanel = new JPanel(new GridLayout(3, 2, 10, 12));
+        centerPanel.setOpaque(false);
+        centerPanel.setBorder(BorderFactory.createEmptyBorder(10, 24, 10, 24));
+
+        JLabel urlLbl = new JLabel("HRMS API URL:");
+        urlLbl.setFont(FONT_BOLD);
+        urlLbl.setForeground(TEXT_BODY);
+        JTextField urlField = new JTextField(Services.LoanService.getApiUrl());
+        urlField.setFont(FONT);
+        urlField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(221, 221, 221), 1, true),
+                BorderFactory.createEmptyBorder(8, 12, 8, 12)));
+
+        JLabel keyLbl = new JLabel("Service API Key:");
+        keyLbl.setFont(FONT_BOLD);
+        keyLbl.setForeground(TEXT_BODY);
+        JTextField keyField = new JTextField(Services.LoanService.getApiKey());
+        keyField.setFont(FONT);
+        keyField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(221, 221, 221), 1, true),
+                BorderFactory.createEmptyBorder(8, 12, 8, 12)));
+
+        JLabel monthLbl = new JLabel("Payout Month (YYYY-MM):");
+        monthLbl.setFont(FONT_BOLD);
+        monthLbl.setForeground(TEXT_BODY);
+        
+        // Determine default month
+        String defaultMonth = "";
+        if (monthCombo != null && monthCombo.getSelectedItem() != null) {
+            String shortMonth = getFormattedMonth();
+            try {
+                java.time.format.DateTimeFormatter in = java.time.format.DateTimeFormatter.ofPattern("MMM-yy", java.util.Locale.ENGLISH);
+                java.time.YearMonth ym = java.time.YearMonth.parse(shortMonth, in);
+                defaultMonth = ym.toString();
+            } catch (Exception ex) {
+                // fallback
+            }
+        }
+        if (defaultMonth.isEmpty()) {
+            defaultMonth = java.time.YearMonth.now().minusMonths(1).toString();
+        }
+        JTextField monthField = new JTextField(defaultMonth);
+        monthField.setFont(FONT);
+        monthField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(221, 221, 221), 1, true),
+                BorderFactory.createEmptyBorder(8, 12, 8, 12)));
+
+        urlField.setCaretPosition(0);
+        keyField.setCaretPosition(0);
+        monthField.setCaretPosition(0);
+
+        centerPanel.add(urlLbl);
+        centerPanel.add(urlField);
+        centerPanel.add(keyLbl);
+        centerPanel.add(keyField);
+        centerPanel.add(monthLbl);
+        centerPanel.add(monthField);
+
+        // Bottom Action Panel
+        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 24, 15));
+        bottomPanel.setOpaque(false);
+
+        JButton fetchBtn = new JButton("Fetch & Save CSV");
+        fetchBtn.setFont(FONT_BOLD);
+        fetchBtn.setForeground(WHITE);
+        fetchBtn.setBackground(GREEN);
+        fetchBtn.setBorderPainted(false);
+        fetchBtn.setFocusPainted(false);
+        fetchBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        fetchBtn.setPreferredSize(new Dimension(170, 38));
+        fetchBtn.addActionListener(e -> {
+            String url = urlField.getText().trim();
+            String key = keyField.getText().trim();
+            String month = monthField.getText().trim();
+
+            if (url.isEmpty() || key.isEmpty() || month.isEmpty()) {
+                JOptionPane.showMessageDialog(dialog, "All fields are required.", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            if (!month.matches("^\\d{4}-\\d{2}$")) {
+                JOptionPane.showMessageDialog(dialog, "Payout Month must be in YYYY-MM format (e.g. 2026-08).", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            try {
+                // Fetch installments from API
+                Services.LoanService.LoanResponse resp = Services.LoanService.fetchLoans(url, key, month);
+                
+                if (resp.installments == null || resp.installments.isEmpty()) {
+                    JOptionPane.showMessageDialog(dialog, "No scheduled loan installments found for month: " + month, "No Data", JOptionPane.INFORMATION_MESSAGE);
+                    return;
+                }
+
+                // Show JFileChooser to select save location
+                JFileChooser fileChooser = new JFileChooser();
+                fileChooser.setDialogTitle("Save Loans CSV");
+                fileChooser.setSelectedFile(new java.io.File("loans_" + month + ".csv"));
+                int userSelection = fileChooser.showSaveDialog(dialog);
+                
+                if (userSelection == JFileChooser.APPROVE_OPTION) {
+                    java.io.File fileToSave = fileChooser.getSelectedFile();
+                    Services.LoanService.exportLoansToCsv(resp.installments, fileToSave);
+                    
+                    // Persist valid settings to properties
+                    Services.LoanService.saveSettings(url, key);
+
+                    JOptionPane.showMessageDialog(dialog, "CSV file saved successfully:\n" + fileToSave.getAbsolutePath(), "Success", JOptionPane.INFORMATION_MESSAGE);
+                    dialog.dispose();
+                }
+
+            } catch (Exception ex) {
+                Utils.LogUtils.error("Failed to fetch loan data: {}", ex.getMessage(), ex);
+                JOptionPane.showMessageDialog(dialog, "Error: " + ex.getMessage(), "Fetch Failed", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        fetchBtn.addMouseListener(new MouseAdapter() {
+            public void mouseEntered(MouseEvent e) { fetchBtn.setBackground(GREEN.brighter()); }
+            public void mouseExited(MouseEvent e) { fetchBtn.setBackground(GREEN); }
+        });
+
+        JButton cancelBtn = new JButton("Cancel");
+        cancelBtn.setFont(FONT_BOLD);
+        cancelBtn.setForeground(WHITE);
+        cancelBtn.setBackground(RED);
+        cancelBtn.setBorderPainted(false);
+        cancelBtn.setFocusPainted(false);
+        cancelBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        cancelBtn.setPreferredSize(new Dimension(100, 38));
+        cancelBtn.addActionListener(e -> dialog.dispose());
+
+        cancelBtn.addMouseListener(new MouseAdapter() {
+            public void mouseEntered(MouseEvent e) { cancelBtn.setBackground(RED.brighter()); }
+            public void mouseExited(MouseEvent e) { cancelBtn.setBackground(RED); }
+        });
+
+        bottomPanel.add(fetchBtn);
+        bottomPanel.add(cancelBtn);
+
+        dialog.add(topPanel, BorderLayout.NORTH);
+        dialog.add(centerPanel, BorderLayout.CENTER);
+        dialog.add(bottomPanel, BorderLayout.SOUTH);
+        dialog.setVisible(true);
     }
 
     /* ===================== MAIN ===================== */
