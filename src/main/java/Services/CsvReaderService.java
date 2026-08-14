@@ -66,6 +66,14 @@ public class CsvReaderService {
         public String performanceBonus;
         public String officeExpense;
         public String leavePayment;
+        
+        // API Injected Fields
+        // Integration fields dynamically injected via backend API queries
+        public String lopDays;
+        public String reimbursementAmount;
+        public String leaveDeduction;
+        public String loanAmount;
+        public String outstandingAmount;
 
         public String maskedBankAccountNo() {
             if (bankAccountNo == null || bankAccountNo.trim().isEmpty()) {

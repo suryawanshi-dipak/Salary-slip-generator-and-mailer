@@ -87,13 +87,16 @@ public class ReimbursementService {
 
     private static Properties loadProperties() {
         Properties props = new Properties();
-        File file = new File(CONFIG_FILE);
-        if (file.exists()) {
-            try (FileInputStream in = new FileInputStream(file)) {
-                props.load(in);
-            } catch (IOException e) {
-                Utils.LogUtils.warn("Could not load properties from {}: {}", CONFIG_FILE, e.getMessage());
+        try {
+            java.io.File propFile = new java.io.File("DATA/smtp.properties");
+            if (!propFile.exists()) {
+                propFile = new java.io.File("Salary-slip-generator-and-mailer/DATA/smtp.properties");
             }
+            try (java.io.InputStream in = new java.io.FileInputStream(propFile)) {
+                props.load(in);
+            }
+        } catch (Exception e) {
+            System.err.println("Could not load smtp.properties: " + e.getMessage());
         }
         return props;
     }

@@ -183,6 +183,8 @@ public class SalarySlipGenerator extends JFrame {
 
     /** The button to batch send emails */
     private JButton sendAllBtn;
+    
+    private JButton generateSlipsButton;
 
     /* ===================== CONSTRUCTOR ===================== */
     /**
@@ -222,99 +224,193 @@ public class SalarySlipGenerator extends JFrame {
     private java.util.List<Services.CsvReaderService.EmployeeSalary> currentRawCsvData = new java.util.ArrayList<>();
     private String lastUploadedCsvPath = null;
 
+    /**
+     * Parses the CSV file and dynamically queries the HRMS backend to merge 
+     * Loans, Reimbursements, and LOP (Loss of Pay) Leaves into the employee records.
+     * 
+     * This heavy I/O operation is offloaded to a SwingWorker background thread to 
+     * ensure the UI remains responsive during HTTP network calls.
+     * 
+     * @param filePath The absolute path of the CSV file selected by the user
+     */
     private void loadCsvData(String filePath) {
-        try {
-            Utils.LogUtils.info("User loading CSV file: {}", filePath);
-            Services.CsvReaderService.CsvParseResult result = Services.CsvReaderService
-                    .parsePayrollCsv(filePath);
+        setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
 
-            Utils.LogUtils.info("CSV parsed successfully. Total Employees: {}", result.employees.size());
+        javax.swing.SwingWorker<Services.CsvReaderService.CsvParseResult, Void> worker = new javax.swing.SwingWorker<>() {
+            @Override
+            protected Services.CsvReaderService.CsvParseResult doInBackground() throws Exception {
+                Utils.LogUtils.info("User loading CSV file in background: {}", filePath);
+                Services.CsvReaderService.CsvParseResult result = Services.CsvReaderService.parsePayrollCsv(filePath);
+                Utils.LogUtils.info("CSV parsed successfully. Total Employees: {}", result.employees.size());
 
-            // Store the raw data for PDF Generation
-            currentRawCsvData = result.employees;
-
-            if (!currentRawCsvData.isEmpty()) {
-                String fileMonth = currentRawCsvData.get(0).month;
-                String fullMonth = formatMonthFull(fileMonth);
-
-                try {
+                if (!result.employees.isEmpty()) {
+                    String fileMonth = result.employees.get(0).month;
                     java.time.format.DateTimeFormatter monthFormat = java.time.format.DateTimeFormatter.ofPattern("MMM-yy", java.util.Locale.ENGLISH);
                     java.time.YearMonth parsedRunMonth = java.time.YearMonth.parse(fileMonth, monthFormat);
-                    java.time.YearMonth currentMonth = java.time.YearMonth.now();
+                    
+                    String apiMonth = String.format("%04d-%02d", parsedRunMonth.getYear(), parsedRunMonth.getMonthValue());
 
-                    if (!parsedRunMonth.isBefore(currentMonth)) {
-                        JOptionPane.showMessageDialog(this,
-                                "Cannot process salary slips for the current or future months. Please upload a CSV for a past month.",
-                                "Invalid Run Month", JOptionPane.ERROR_MESSAGE);
-                        return;
-                    }
-                } catch (Exception e) {
-                    Utils.LogUtils.error("Failed to parse file month: {}", e.getMessage());
-                }
+                    // 1. Fetch API Data
+                    Services.LoanService.LoanResponse loanRes = null;
+                    try {
+                        loanRes = Services.LoanService.fetchLoans(Services.LoanService.getApiUrl(), Services.LoanService.getApiKey(), apiMonth);
+                    } catch(Exception e) { Utils.LogUtils.warn("Failed to fetch loans: {}", e.getMessage()); }
 
-                monthCombo.removeAllItems();
-                monthCombo.addItem(fullMonth);
-                monthCombo.setSelectedItem(fullMonth);
+                    Services.ReimbursementService.ReimbursementResponse reimbRes = null;
+                    try {
+                        reimbRes = Services.ReimbursementService.fetchClaims(Services.ReimbursementService.getApiUrl(), Services.ReimbursementService.getApiKey(), apiMonth);
+                    } catch(Exception e) { Utils.LogUtils.warn("Failed to fetch reimbursements: {}", e.getMessage()); }
 
-                // Clear the existing PDFs for this month
-                String shortMonth = getFormattedMonth();
-                String outputDir = System.getProperty("user.home")
-                        + java.io.File.separator + "SalarySlips"
-                        + java.io.File.separator + shortMonth;
-                java.io.File dir = new java.io.File(outputDir);
-                if (dir.exists() && dir.isDirectory()) {
-                    java.io.File[] files = dir.listFiles((d, name) -> name.toLowerCase().endsWith(".pdf"));
-                    if (files != null) {
-                        for (java.io.File f : files) {
-                            f.delete();
+                    Services.LeaveService.LeaveResponse leaveRes = null;
+                    try {
+                        leaveRes = Services.LeaveService.fetchLeaves(Services.LeaveService.getApiUrl(), Services.LeaveService.getApiKey(), apiMonth);
+                    } catch(Exception e) { Utils.LogUtils.warn("Failed to fetch leaves: {}", e.getMessage()); }
+
+                    // 2. Merge Data and Calculate Net Salary
+                    for (int i = 0; i < result.employees.size(); i++) {
+                        Services.CsvReaderService.EmployeeSalary emp = result.employees.get(i);
+                        Object[] row = result.rows[i];
+                        
+                        double emi = 0.0;
+                        double reimb = 0.0;
+                        double lopDays = 0.0;
+
+                        if (loanRes != null && loanRes.installments != null) {
+                            for (Services.LoanService.Installment inst : loanRes.installments) {
+                                if (inst.employee_id.equals(emp.eCode)) {
+                                    try { 
+                                        emi += Double.parseDouble(inst.emi_amount); 
+                                        if (inst.loan_amount != null) emp.loanAmount = inst.loan_amount;
+                                        if (inst.outstanding_amount != null) emp.outstandingAmount = inst.outstanding_amount;
+                                    } catch(Exception ignored){}
+                                }
+                            }
                         }
-                        Utils.LogUtils.info("Cleared {} existing PDFs from {}", files.length, outputDir);
+
+                        if (reimbRes != null && reimbRes.claims != null) {
+                            for (Services.ReimbursementService.Claim claim : reimbRes.claims) {
+                                if (claim.employee_id.equals(emp.eCode)) {
+                                    try { reimb += Double.parseDouble(claim.amount); } catch(Exception ignored){}
+                                }
+                            }
+                        }
+
+                        if (leaveRes != null && leaveRes.data != null) {
+                            if (leaveRes.data.containsKey(emp.eCode)) {
+                                lopDays = leaveRes.data.get(emp.eCode);
+                            }
+                        }
+
+                        emp.loanDeducted = String.valueOf((int)Math.round(emi));
+                        emp.reimbursementAmount = String.valueOf((int)Math.round(reimb));
+                        emp.lopDays = String.valueOf(lopDays);
+
+                        double basic = 0;
+                        try { basic = Double.parseDouble(emp.totalBasic); } catch(Exception e){}
+                        
+                        double allowances = 0;
+                        try { allowances = Double.parseDouble(emp.totalHra) + Double.parseDouble(emp.totalSplAllowance) + Double.parseDouble(emp.totalKra); } catch(Exception e){}
+                        
+                        double pt = 0, tds = 0;
+                        try { pt = Double.parseDouble(emp.pt); } catch(Exception e){}
+                        try { tds = Double.parseDouble(emp.tds); } catch(Exception e){}
+                        double taxes = pt + tds;
+
+                        double perDaySalary = basic / 30.0;
+                        double leaveDeduction = lopDays * perDaySalary;
+                        emp.leaveDeduction = String.valueOf((int)Math.round(leaveDeduction));
+                        
+                        double newTotalDeduction = taxes + leaveDeduction + emi;
+                        emp.totalDeduction = String.valueOf((int)Math.round(newTotalDeduction));
+                        
+                        double others = 0;
+                        try { others = Double.parseDouble(emp.performanceBonus) + Double.parseDouble(emp.officeExpense) + Double.parseDouble(emp.leavePayment); } catch(Exception e){}
+                        
+                        double totalEarnings = basic + allowances + others + reimb;
+                        emp.netSalary = String.valueOf((int)Math.round(totalEarnings));
+                        
+                        double netPay = totalEarnings - newTotalDeduction;
+                        if (netPay < 0) netPay = 0;
+                        emp.netPay = String.valueOf((int)Math.round(netPay));
+                        
+                        // Update UI row data (Net Pay)
+                        row[4] = "\u20B9" + emp.netPay;
                     }
                 }
+
+                return result;
             }
 
-            // Clear existing table data and inject parsed CSV rows
-            model.setRowCount(0);
-            for (Object[] row : result.rows) {
-                model.addRow(row);
-            }
+            @Override
+            protected void done() {
+                setCursor(Cursor.getDefaultCursor());
+                try {
+                    Services.CsvReaderService.CsvParseResult result = get();
+                    currentRawCsvData = result.employees;
 
-            updateDashboardStats();
+                    if (!currentRawCsvData.isEmpty()) {
+                        String fileMonth = currentRawCsvData.get(0).month;
+                        String fullMonth = formatMonthFull(fileMonth);
+                        
+                        try {
+                            java.time.format.DateTimeFormatter monthFormat = java.time.format.DateTimeFormatter.ofPattern("MMM-yy", java.util.Locale.ENGLISH);
+                            java.time.YearMonth parsedRunMonth = java.time.YearMonth.parse(fileMonth, monthFormat);
+                            java.time.YearMonth currentMonth = java.time.YearMonth.now();
 
-            // Check if validation found any errors
-            if (!result.errors.isEmpty()) {
-                Utils.LogUtils.warn("CSV validation completed with {} errors.", result.errors.size());
+                            if (!parsedRunMonth.isBefore(currentMonth)) {
+                                JOptionPane.showMessageDialog(SalarySlipGenerator.this,
+                                        "Cannot process salary slips for the current or future months. Please upload a CSV for a past month.",
+                                        "Invalid Run Month", JOptionPane.ERROR_MESSAGE);
+                                return;
+                            }
+                        } catch (Exception e) {}
+                        
+                        monthCombo.removeAllItems();
+                        monthCombo.addItem(fullMonth);
+                        monthCombo.setSelectedItem(fullMonth);
 
-                for (Services.CsvReaderService.CsvError err : result.errors) {
-                    String empId = (err.eCode == null || err.eCode.isEmpty()) ? "Unknown" : err.eCode;
-                    String empName = (err.name == null || err.name.isEmpty()) ? "Unknown" : err.name;
-                    failedRecords.add(new FailedRecord(empId, empName, err.reason, "Correct CSV data"));
+                        String shortMonth = getFormattedMonth();
+                        String outputDir = System.getProperty("user.home")
+                                + java.io.File.separator + "SalarySlips"
+                                + java.io.File.separator + shortMonth;
+                        java.io.File dir = new java.io.File(outputDir);
+                        if (dir.exists() && dir.isDirectory()) {
+                            java.io.File[] files = dir.listFiles((d, name) -> name.toLowerCase().endsWith(".pdf"));
+                            if (files != null) {
+                                for (java.io.File f : files) { f.delete(); }
+                            }
+                        }
+                    }
+
+                    model.setRowCount(0);
+                    for (Object[] row : result.rows) {
+                        model.addRow(row);
+                    }
+                    updateDashboardStats();
+
+                    if (!result.errors.isEmpty()) {
+                        for (Services.CsvReaderService.CsvError err : result.errors) {
+                            String empId = (err.eCode == null || err.eCode.isEmpty()) ? "Unknown" : err.eCode;
+                            String empName = (err.name == null || err.name.isEmpty()) ? "Unknown" : err.name;
+                            failedRecords.add(new FailedRecord(empId, empName, err.reason, "Correct CSV data"));
+                        }
+                        showFailedRecordsDialog();
+                    } else {
+                        JOptionPane.showMessageDialog(SalarySlipGenerator.this,
+                                "Data loaded successfully and APIs fetched! You can now generate the slips.",
+                                "Success",
+                                JOptionPane.INFORMATION_MESSAGE);
+                    }
+                } catch (Exception ex) {
+                    Utils.LogUtils.error("Error while processing CSV and APIs: {}", ex.getMessage(), ex);
+                    JOptionPane.showMessageDialog(SalarySlipGenerator.this,
+                            "Error: " + ex.getMessage(),
+                            "Error",
+                            JOptionPane.ERROR_MESSAGE);
                 }
-
-                showFailedRecordsDialog();
-            } else {
-                Utils.LogUtils.info("CSV uploaded without validation errors.");
-
-                JOptionPane.showMessageDialog(this,
-                        "Data loaded successfully from CSV! No errors found.",
-                        "Success",
-                        JOptionPane.INFORMATION_MESSAGE);
             }
-        } catch (IllegalArgumentException ex) {
-            Utils.LogUtils.error("CSV validation failed: {}", ex.getMessage(), ex);
-
-            JOptionPane.showMessageDialog(this,
-                    "CSV Validation Failed: " + ex.getMessage(),
-                    "Validation Error",
-                    JOptionPane.ERROR_MESSAGE);
-        } catch (Exception ex) {
-            Utils.LogUtils.error("Error while uploading CSV: {}", ex.getMessage(), ex);
-
-            JOptionPane.showMessageDialog(this,
-                    "Error reading file: " + ex.getMessage(),
-                    "Error",
-                    JOptionPane.ERROR_MESSAGE);
-        }
+        };
+        worker.execute();
     }
 
     /**
@@ -387,7 +483,7 @@ public class SalarySlipGenerator extends JFrame {
                 }));
 
         // Generate Slips Button
-        right.add(makeHeaderButton("\uE74C", "Generate Slips", PRIMARY_PURPLE, WHITE,
+        generateSlipsButton = makeHeaderButton("\uE74C", "Generate Slips", PRIMARY_PURPLE, WHITE,
                 e -> {
                     if (currentRawCsvData == null || currentRawCsvData.isEmpty()) {
                         JOptionPane.showMessageDialog(this,
@@ -517,7 +613,8 @@ public class SalarySlipGenerator extends JFrame {
                         p.add(msg, BorderLayout.CENTER);
                         JOptionPane.showMessageDialog(this, p, "Generation Result", JOptionPane.PLAIN_MESSAGE);
                     }
-                }));
+                });
+        right.add(generateSlipsButton);
 
         header.add(left, BorderLayout.WEST);
         header.add(right, BorderLayout.EAST);

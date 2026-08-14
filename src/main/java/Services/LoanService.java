@@ -45,6 +45,8 @@ public class LoanService {
         public String emi_amount;
         public String status;
         public String loan_reason;
+        public String loan_amount;
+        public String outstanding_amount;
     }
 
     // --- Properties configuration ---
@@ -87,13 +89,16 @@ public class LoanService {
 
     private static Properties loadProperties() {
         Properties props = new Properties();
-        File file = new File(CONFIG_FILE);
-        if (file.exists()) {
-            try (FileInputStream in = new FileInputStream(file)) {
-                props.load(in);
-            } catch (IOException e) {
-                Utils.LogUtils.warn("Could not load properties from {}: {}", CONFIG_FILE, e.getMessage());
+        try {
+            java.io.File propFile = new java.io.File("DATA/smtp.properties");
+            if (!propFile.exists()) {
+                propFile = new java.io.File("Salary-slip-generator-and-mailer/DATA/smtp.properties");
             }
+            try (java.io.InputStream in = new java.io.FileInputStream(propFile)) {
+                props.load(in);
+            }
+        } catch (Exception e) {
+            System.err.println("Could not load smtp.properties: " + e.getMessage());
         }
         return props;
     }
@@ -108,6 +113,15 @@ public class LoanService {
      * @param month The target due month in YYYY-MM format.
      * @return LoanResponse mapped from JSON.
      * @throws Exception If fetching or parsing fails.
+     */
+    /**
+     * Queries the HRMS backend to fetch active loan installments for the specified month.
+     * Uses API Key authentication for secure service-to-service communication.
+     * 
+     * @param apiUrl The base URL of the HRMS backend.
+     * @param apiKey The secret API key.
+     * @param month The target payout month in YYYY-MM format.
+     * @return LoanResponse containing matched employee loan schedules.
      */
     public static LoanResponse fetchLoans(String apiUrl, String apiKey, String month) throws Exception {
         if (month == null || !month.matches("^\\d{4}-\\d{2}$")) {

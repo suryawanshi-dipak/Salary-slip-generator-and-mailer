@@ -160,6 +160,8 @@ public class PdfUtil {
 
         // --- Earnings Table Preparation ---
         // We dynamically build the list of earnings to allow for row suppression.
+        // For example, Reimbursements will only be rendered if they are fetched
+        // successfully from the backend API and are greater than 0.
         Utils.LogUtils.debug("Preparing earnings components for Employee ID: {}", empId);
         List<EarningRow> earnings = new ArrayList<>();
 
@@ -181,16 +183,28 @@ public class PdfUtil {
         if (parseInteger(empData.leavePayment) != 0) {
             earnings.add(new EarningRow("Leave Payment", "", safe(empData.leavePayment)));
         }
+        if (parseInteger(empData.reimbursementAmount) > 0) {
+            earnings.add(new EarningRow("Reimbursements", "", safe(empData.reimbursementAmount)));
+        }
 
         // --- Deductions Table Preparation ---
-        // Dynamically build deductions side.
-
+        // Dynamically build deductions side. Similar to earnings, 
+        // Loan Deductions and LOP Leave Deductions are conditionally rendered
+        // based on the background API fetch merging.
         List<DeductionRow> deductions = new ArrayList<>();
         deductions.add(new DeductionRow("Professional tax", safe(empData.pt)));
         deductions.add(new DeductionRow("TDS Deducted", safe(empData.tds)));
 
-        if (parseInteger(empData.loanDeducted) != 0) {
+        if (parseInteger(empData.loanDeducted) > 0) {
             deductions.add(new DeductionRow("Loan Deducted", safe(empData.loanDeducted)));
+        }
+        
+        if (parseInteger(empData.leaveDeduction) > 0) {
+            String label = "Leave Deduction";
+            if (parseInteger(empData.lopDays) > 0) {
+                label += " (LOP: " + safe(empData.lopDays) + ")";
+            }
+            deductions.add(new DeductionRow(label, safe(empData.leaveDeduction)));
         }
 
         String destPath = new File(dir, filename).getAbsolutePath();
@@ -214,7 +228,11 @@ public class PdfUtil {
             Cell logoCell = new Cell().setBorder(Border.NO_BORDER).setVerticalAlignment(VerticalAlignment.MIDDLE);
             try {
                 Utils.LogUtils.debug("Loading company logo into PDF");
-                ImageData data = ImageDataFactory.create("DATA/logo.jpg");
+                java.io.File logoFile = new java.io.File("DATA/logo.jpg");
+                if (!logoFile.exists()) {
+                    logoFile = new java.io.File("Salary-slip-generator-and-mailer/DATA/logo.jpg");
+                }
+                ImageData data = ImageDataFactory.create(logoFile.getAbsolutePath());
                 Image img = new Image(data);
                 img.setWidth(80);
                 logoCell.add(img);
@@ -285,6 +303,13 @@ public class PdfUtil {
             empDetails.addCell(noBorder(empId, false));
             empDetails.addCell(noBorder("", false));
             empDetails.addCell(noBorder("", false));
+            
+            if (empData.loanAmount != null && parseInteger(empData.loanAmount) > 0) {
+                empDetails.addCell(noBorder("Total Loan Amount", true));
+                empDetails.addCell(noBorder(empData.loanAmount, false));
+                empDetails.addCell(noBorder("Outstanding Loan Amount", true));
+                empDetails.addCell(noBorder(safeStr(empData.outstandingAmount), false));
+            }
 
             outerTable.addCell(new Cell().add(empDetails).setPadding(5));
 

@@ -5,6 +5,8 @@ Salary Slip Generator is a Java-based desktop application designed for automated
 ## Key Features
 - **Backend API Integration**: Directly fetches approved employee reimbursements and loan EMI data from the HRMS backend via secure API endpoints.
 - **CSV Data Ingestion**: Parses core employee salary data and personal details from standard CSV files.
+- **Dynamic Salary Calculation**: Processes basic pay, earnings, deductions, and integrates external API data into the final slip.
+- **PDF Generation**: Creates professional, password-protected PDF salary slips using Employee ID and Date of Joining as credentials.
 - **Automated Emailing**: Distributes the generated PDFs directly to employees via an integrated SMTP client.
 - **Desktop UI**: A simple Graphical User Interface built with Java Swing for generating slips and tracking delivery status.
 - **In-App Updater & Logging**: Includes Git-based utilities for in-app hot-swapping and centralized console logging for robust error reporting.
@@ -58,6 +60,9 @@ mvn clean package
 This project relies on a `DATA/smtp.properties` file to securely store configuration.
 
 ### SMTP & API Settings
+The `smtp.properties` file holds the configuration for both SMTP email delivery and backend HRMS API integration (for fetching Reimbursements and Loans).
+
+Example `DATA/smtp.properties`:
 ```properties
 smtp.host=sg2plzcpnl505617.prod.sin2.secureserver.net
 smtp.port=465
