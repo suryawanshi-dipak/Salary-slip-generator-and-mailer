@@ -1,7 +1,7 @@
 package Services;
 
 import java.io.File;
-import java.io.FileInputStream;
+
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -21,7 +21,7 @@ import com.google.gson.Gson;
  */
 public class ReimbursementService {
 
-    private static final String CONFIG_FILE = "DATA/smtp.properties";
+    private static final String CONFIG_FILE = new File("Salary-slip-generator-and-mailer/DATA/smtp.properties").exists() ? "Salary-slip-generator-and-mailer/DATA/smtp.properties" : "DATA/smtp.properties";
     private static final String DEFAULT_URL = "http://localhost:5000/api/reimbursements/payroll-export";
     private static final String DEFAULT_KEY = "sk_live_test_payroll_key_9999";
 

@@ -56,8 +56,8 @@ import jakarta.mail.internet.MimeMultipart;
  */
 public class MailUtil {
 
-    private static final String CONFIG_FILE = "DATA/smtp.properties";
-    private static final String LEDGER_FILE = "DATA/sent_ledger.csv";
+    private static final String CONFIG_FILE = new File("Salary-slip-generator-and-mailer/DATA/smtp.properties").exists() ? "Salary-slip-generator-and-mailer/DATA/smtp.properties" : "DATA/smtp.properties";
+    private static final String LEDGER_FILE = new File("Salary-slip-generator-and-mailer/DATA").exists() ? "Salary-slip-generator-and-mailer/DATA/sent_ledger.csv" : "DATA/sent_ledger.csv";
 
     private static Properties smtpProps;
     private static Set<String> sentKeys = new HashSet<>();

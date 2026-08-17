@@ -1,7 +1,7 @@
 package Services;
 
 import java.io.File;
-import java.io.FileInputStream;
+
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.URI;
@@ -18,7 +18,7 @@ import com.google.gson.Gson;
  */
 public class LeaveService {
 
-    private static final String CONFIG_FILE = "DATA/smtp.properties";
+    private static final String CONFIG_FILE = new File("Salary-slip-generator-and-mailer/DATA/smtp.properties").exists() ? "Salary-slip-generator-and-mailer/DATA/smtp.properties" : "DATA/smtp.properties";
     private static final String DEFAULT_URL = "http://localhost:5000/api/payroll-export/leaves";
     private static final String DEFAULT_KEY = "sk_live_test_payroll_key_9999";
 
@@ -44,6 +44,26 @@ public class LeaveService {
     public static String getApiKey() {
         Properties props = loadProperties();
         return props.getProperty("leave.api.key", DEFAULT_KEY);
+    }
+
+    /**
+     * Saves updated Leave API URL and Key to smtp.properties, preserving existing values.
+     */
+    public static void saveSettings(String url, String key) throws IOException {
+        Properties props = loadProperties();
+        props.setProperty("leave.api.url", url != null ? url.trim() : DEFAULT_URL);
+        props.setProperty("leave.api.key", key != null ? key.trim() : DEFAULT_KEY);
+        
+        File file = new File(CONFIG_FILE);
+        File parent = file.getParentFile();
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs();
+        }
+        
+        try (FileOutputStream out = new FileOutputStream(file)) {
+            props.store(out, "Updated Leave API Settings");
+            Utils.LogUtils.info("Saved leave API settings to {}", CONFIG_FILE);
+        }
     }
 
     private static Properties loadProperties() {
@@ -125,5 +145,52 @@ public class LeaveService {
             } catch (Exception ignored) {}
             throw new Exception(errMsg);
         }
+    }
+
+    /**
+     * Converts LOP leaves map to CSV and saves it to the target file path.
+     * 
+     * @param leaveData The map of Employee ID to LOP Days to export.
+     * @param targetFile The file path where the CSV will be saved.
+     * @throws IOException If writing fails.
+     */
+    public static void exportLeavesToCsv(Map<String, Double> leaveData, File targetFile) throws IOException {
+        if (leaveData == null) {
+            leaveData = new java.util.HashMap<>();
+        }
+
+        Utils.LogUtils.info("Exporting {} leave records to CSV file: {}", leaveData.size(), targetFile.getAbsolutePath());
+
+        File parent = targetFile.getParentFile();
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs();
+        }
+
+        try (java.io.PrintWriter pw = new java.io.PrintWriter(targetFile)) {
+            // Write CSV headers
+            pw.println("Employee ID,LOP Days");
+
+            // Write CSV data rows
+            for (Map.Entry<String, Double> entry : leaveData.entrySet()) {
+                StringBuilder row = new StringBuilder();
+                row.append(escapeCsvField(entry.getKey())).append(",");
+                row.append(entry.getValue());
+                pw.println(row.toString());
+            }
+        }
+    }
+
+    /**
+     * Safely escapes fields for standard CSV representation.
+     */
+    private static String escapeCsvField(String value) {
+        if (value == null) {
+            return "";
+        }
+        String val = value.trim();
+        if (val.contains(",") || val.contains("\"") || val.contains("\n") || val.contains("\r")) {
+            return "\"" + val.replace("\"", "\"\"") + "\"";
+        }
+        return val;
     }
 }

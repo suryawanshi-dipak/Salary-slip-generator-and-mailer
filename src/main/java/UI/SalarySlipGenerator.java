@@ -200,7 +200,8 @@ public class SalarySlipGenerator extends JFrame {
 
         // Set application logo
         try {
-            java.io.File logoFile = new java.io.File("DATA/logo.jpg");
+            String logoPath = new java.io.File("Salary-slip-generator-and-mailer/DATA/logo.jpg").exists() ? "Salary-slip-generator-and-mailer/DATA/logo.jpg" : "DATA/logo.jpg";
+            java.io.File logoFile = new java.io.File(logoPath);
             if (logoFile.exists()) {
                 setIconImage(new ImageIcon(logoFile.getAbsolutePath()).getImage());
             }
@@ -461,13 +462,21 @@ public class SalarySlipGenerator extends JFrame {
         refreshBtn.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
         right.add(refreshBtn);
 
-        // Fetch Reimbursements Button
-        right.add(makeHeaderButton("\uE896", "Fetch Reimbursements", BLUE_MID, WHITE,
-                e -> showReimbursementFetchDialog()));
+        // Manual Fetch Menu Button
+        JButton fetchApiBtn = makeHeaderButton("\uE118", "Export APIs \u25BC", new Color(41, 128, 185), WHITE, null);
+        javax.swing.JPopupMenu fetchMenu = new javax.swing.JPopupMenu();
+        javax.swing.JMenuItem fetchLoansItem = new javax.swing.JMenuItem("Export Loan EMIs");
+        fetchLoansItem.addActionListener(e -> showLoanFetchDialog());
+        javax.swing.JMenuItem fetchReimbItem = new javax.swing.JMenuItem("Export Reimbursements");
+        fetchReimbItem.addActionListener(e -> showReimbursementFetchDialog());
+        javax.swing.JMenuItem fetchLeavesItem = new javax.swing.JMenuItem("Export LOP Leaves");
+        fetchLeavesItem.addActionListener(e -> showLeaveFetchDialog());
+        fetchMenu.add(fetchLoansItem);
+        fetchMenu.add(fetchReimbItem);
+        fetchMenu.add(fetchLeavesItem);
+        fetchApiBtn.addActionListener(e -> fetchMenu.show(fetchApiBtn, 0, fetchApiBtn.getHeight()));
+        right.add(fetchApiBtn);
 
-        // Fetch Loans Button
-        right.add(makeHeaderButton("\uE8A1", "Fetch Loans", BLUE_MID, WHITE,
-                e -> showLoanFetchDialog()));
 
         // Upload CSV Button
         right.add(makeHeaderButton("\uE898", "Upload CSV", UPLOAD_GREEN, WHITE,
@@ -1831,6 +1840,13 @@ public class SalarySlipGenerator extends JFrame {
                     int[] xPoints = { cx - 7, cx + 8, cx - 7, cx - 3 };
                     int[] yPoints = { cy - 7, cy, cy + 7, cy };
                     g2.fillPolygon(xPoints, yPoints, 4);
+                } else if (type.equals("sync")) { // Draw Sync / Refresh Icon
+                    g2.setStroke(new BasicStroke(1.5f));
+                    g2.drawArc(cx - 6, cy - 6, 12, 12, 45, 270);
+                    // Arrowhead
+                    int[] xPoints = { cx - 1, cx + 3, cx - 2 };
+                    int[] yPoints = { cy - 8, cy - 6, cy - 3 };
+                    g2.fillPolygon(xPoints, yPoints, 3);
                 }
 
                 g2.dispose();
@@ -2301,6 +2317,168 @@ public class SalarySlipGenerator extends JFrame {
 
             } catch (Exception ex) {
                 Utils.LogUtils.error("Failed to fetch loan data: {}", ex.getMessage(), ex);
+                JOptionPane.showMessageDialog(dialog, "Error: " + ex.getMessage(), "Fetch Failed", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        fetchBtn.addMouseListener(new MouseAdapter() {
+            public void mouseEntered(MouseEvent e) { fetchBtn.setBackground(GREEN.brighter()); }
+            public void mouseExited(MouseEvent e) { fetchBtn.setBackground(GREEN); }
+        });
+
+        JButton cancelBtn = new JButton("Cancel");
+        cancelBtn.setFont(FONT_BOLD);
+        cancelBtn.setForeground(WHITE);
+        cancelBtn.setBackground(RED);
+        cancelBtn.setBorderPainted(false);
+        cancelBtn.setFocusPainted(false);
+        cancelBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        cancelBtn.setPreferredSize(new Dimension(100, 38));
+        cancelBtn.addActionListener(e -> dialog.dispose());
+
+        cancelBtn.addMouseListener(new MouseAdapter() {
+            public void mouseEntered(MouseEvent e) { cancelBtn.setBackground(RED.brighter()); }
+            public void mouseExited(MouseEvent e) { cancelBtn.setBackground(RED); }
+        });
+
+        bottomPanel.add(fetchBtn);
+        bottomPanel.add(cancelBtn);
+
+        dialog.add(topPanel, BorderLayout.NORTH);
+        dialog.add(centerPanel, BorderLayout.CENTER);
+        dialog.add(bottomPanel, BorderLayout.SOUTH);
+        dialog.setVisible(true);
+    }
+
+    private void showLeaveFetchDialog() {
+        JDialog dialog = new JDialog(this, "Fetch Leave LOP Data", true);
+        dialog.setSize(520, 340);
+        dialog.setLocationRelativeTo(this);
+        dialog.setLayout(new BorderLayout(10, 10));
+        dialog.getContentPane().setBackground(BG);
+
+        // Top Header
+        JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 20, 15));
+        topPanel.setOpaque(false);
+        JLabel titleLbl = new JLabel("Fetch Approved Loss of Pay (LOP) Leaves");
+        titleLbl.setFont(FONT_HEADING);
+        titleLbl.setForeground(TEXT_HEADING);
+        topPanel.add(titleLbl);
+
+        // Center Content Panel
+        JPanel centerPanel = new JPanel(new GridLayout(3, 2, 10, 12));
+        centerPanel.setOpaque(false);
+        centerPanel.setBorder(BorderFactory.createEmptyBorder(10, 24, 10, 24));
+
+        JLabel urlLbl = new JLabel("HRMS API URL:");
+        urlLbl.setFont(FONT_BOLD);
+        urlLbl.setForeground(TEXT_BODY);
+        JTextField urlField = new JTextField(Services.LeaveService.getApiUrl());
+        urlField.setFont(FONT);
+        urlField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(221, 221, 221), 1, true),
+                BorderFactory.createEmptyBorder(8, 12, 8, 12)));
+
+        JLabel keyLbl = new JLabel("Service API Key:");
+        keyLbl.setFont(FONT_BOLD);
+        keyLbl.setForeground(TEXT_BODY);
+        JTextField keyField = new JTextField(Services.LeaveService.getApiKey());
+        keyField.setFont(FONT);
+        keyField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(221, 221, 221), 1, true),
+                BorderFactory.createEmptyBorder(8, 12, 8, 12)));
+
+        JLabel monthLbl = new JLabel("Payout Month (YYYY-MM):");
+        monthLbl.setFont(FONT_BOLD);
+        monthLbl.setForeground(TEXT_BODY);
+        
+        // Determine default month
+        String defaultMonth = "";
+        if (monthCombo != null && monthCombo.getSelectedItem() != null) {
+            String shortMonth = getFormattedMonth();
+            try {
+                java.time.format.DateTimeFormatter in = java.time.format.DateTimeFormatter.ofPattern("MMM-yy", java.util.Locale.ENGLISH);
+                java.time.YearMonth ym = java.time.YearMonth.parse(shortMonth, in);
+                defaultMonth = ym.toString();
+            } catch (Exception ex) {
+                // fallback
+            }
+        }
+        if (defaultMonth.isEmpty()) {
+            defaultMonth = java.time.YearMonth.now().minusMonths(1).toString();
+        }
+        JTextField monthField = new JTextField(defaultMonth);
+        monthField.setFont(FONT);
+        monthField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(221, 221, 221), 1, true),
+                BorderFactory.createEmptyBorder(8, 12, 8, 12)));
+
+        urlField.setCaretPosition(0);
+        keyField.setCaretPosition(0);
+        monthField.setCaretPosition(0);
+
+        centerPanel.add(urlLbl);
+        centerPanel.add(urlField);
+        centerPanel.add(keyLbl);
+        centerPanel.add(keyField);
+        centerPanel.add(monthLbl);
+        centerPanel.add(monthField);
+
+        // Bottom Action Panel
+        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 24, 15));
+        bottomPanel.setOpaque(false);
+
+        JButton fetchBtn = new JButton("Fetch & Save CSV");
+        fetchBtn.setFont(FONT_BOLD);
+        fetchBtn.setForeground(WHITE);
+        fetchBtn.setBackground(GREEN);
+        fetchBtn.setBorderPainted(false);
+        fetchBtn.setFocusPainted(false);
+        fetchBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        fetchBtn.setPreferredSize(new Dimension(170, 38));
+        fetchBtn.addActionListener(e -> {
+            String url = urlField.getText().trim();
+            String key = keyField.getText().trim();
+            String month = monthField.getText().trim();
+
+            if (url.isEmpty() || key.isEmpty() || month.isEmpty()) {
+                JOptionPane.showMessageDialog(dialog, "All fields are required.", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            if (!month.matches("^\\d{4}-\\d{2}$")) {
+                JOptionPane.showMessageDialog(dialog, "Payout Month must be in YYYY-MM format (e.g. 2026-08).", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            try {
+                // Fetch leaves from API
+                Services.LeaveService.LeaveResponse resp = Services.LeaveService.fetchLeaves(url, key, month);
+                
+                if (resp.data == null || resp.data.isEmpty()) {
+                    JOptionPane.showMessageDialog(dialog, "No approved LOP leaves found for month: " + month, "No Data", JOptionPane.INFORMATION_MESSAGE);
+                    return;
+                }
+
+                // Show JFileChooser to select save location
+                JFileChooser fileChooser = new JFileChooser();
+                fileChooser.setDialogTitle("Save Leaves CSV");
+                fileChooser.setSelectedFile(new java.io.File("leaves_" + month + ".csv"));
+                int userSelection = fileChooser.showSaveDialog(dialog);
+                
+                if (userSelection == JFileChooser.APPROVE_OPTION) {
+                    java.io.File fileToSave = fileChooser.getSelectedFile();
+                    Services.LeaveService.exportLeavesToCsv(resp.data, fileToSave);
+                    
+                    // Persist valid settings to properties
+                    Services.LeaveService.saveSettings(url, key);
+
+                    JOptionPane.showMessageDialog(dialog, "CSV file saved successfully:\n" + fileToSave.getAbsolutePath(), "Success", JOptionPane.INFORMATION_MESSAGE);
+                    dialog.dispose();
+                }
+
+            } catch (Exception ex) {
+                Utils.LogUtils.error("Failed to fetch leave data: {}", ex.getMessage(), ex);
                 JOptionPane.showMessageDialog(dialog, "Error: " + ex.getMessage(), "Fetch Failed", JOptionPane.ERROR_MESSAGE);
             }
         });
