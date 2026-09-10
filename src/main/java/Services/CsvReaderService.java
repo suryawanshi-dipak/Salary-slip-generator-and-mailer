@@ -63,6 +63,7 @@ public class CsvReaderService {
         public String designation;
         public String bankName;
         public String bankAccountNo;
+        public String ifscCode;
         public String performanceBonus;
         public String officeExpense;
         public String leavePayment;
@@ -183,27 +184,43 @@ public class CsvReaderService {
         }
     }
 
-    /**
-     * Parses the given CSV file into a format suitable for the SalarySlipGenerator
-     * table model, performs data validation, maps columns by header name, and
-     * applies 4-identity reconciliation checks.
-     * 
-     * @param filePath The absolute path to the CSV file
-     * @return A CsvParseResult containing the 2D Object array, a list of parsed
-     *         EmployeeSalary objects, and a list of validation errors.
-     * @throws IOException If there is an issue reading the file
-     */
+    /** Back-compat overload: reads the payroll month from the file's "Month" column, if any. */
     public static CsvParseResult parsePayrollCsv(String filePath) throws IOException {
-        Utils.LogUtils.info("Starting CSV parsing for file: {}", filePath);
+        return parsePayrollCsv(filePath, null);
+    }
+
+    /**
+     * Parses the Master CTC CSV file into a format suitable for the
+     * SalarySlipGenerator table model, performs data validation, maps columns by
+     * header name, and applies the earnings reconciliation checks.
+     *
+     * @param filePath the absolute path to the CSV file
+     * @param runMonth  the payroll month in {@code MMM-yy} (e.g. {@code Aug-26}) chosen
+     *                  by the user; when non-blank every row is stamped with it and any
+     *                  "Month" column in the file is ignored. When {@code null}/blank the
+     *                  month is read from the file's "Month" column (legacy behaviour).
+     * @return a CsvParseResult with the 2D Object array, the parsed EmployeeSalary
+     *         objects, and any validation errors.
+     * @throws IOException if the file cannot be read
+     */
+    public static CsvParseResult parsePayrollCsv(String filePath, String runMonth) throws IOException {
+        Utils.LogUtils.info("Starting CSV parsing for file: {} (run month: {})", filePath,
+                (runMonth == null || runMonth.isBlank()) ? "from file" : runMonth);
+        boolean useSelectedMonth = runMonth != null && !runMonth.isBlank();
         List<Object[]> rows = new ArrayList<>();
         List<EmployeeSalary> employees = new ArrayList<>();
         List<CsvError> errors = new ArrayList<>();
 
+        // Master CTC columns. "Month" is not part of the sheet - the annual CTC file is
+        // month-agnostic and the user selects the payroll month in the app. "Leaves
+        // Availed", "Month Days", "Days Worked" and "Loan Deducted" are derived from the
+        // HRMS import at slip-generation time. Older files that still carry any of these
+        // columns parse fine: extra columns are simply ignored.
         String[] expectedHeaders = {
-                "month", "sr.no.", "e.code", "name", "doj", "total basic", "total hra", "total spl. allowance",
-                "total kra", "gross salary", "leaves availed", "month days", "days worked", "basic", "hra",
-                "spl. allowance", "kra", "net salary", "pt", "loan deducted", "tds", "total deduction", "net pay",
-                "email", "designation", "bank name", "bank a/c no.", "performance bonus", "office expense",
+                "sr.no.", "e.code", "name", "doj", "total basic", "total hra", "total spl. allowance",
+                "total kra", "gross salary", "basic", "hra",
+                "spl. allowance", "kra", "net salary", "pt", "tds", "total deduction", "net pay",
+                "email", "designation", "bank name", "bank a/c no.", "ifsc code", "performance bonus", "office expense",
                 "leave payment"
         };
 
@@ -293,9 +310,13 @@ public class CsvReaderService {
                 // Populate the object properties by extracting columns dynamically via the
                 // columnMap
                 EmployeeSalary emp = new EmployeeSalary();
-                emp.month = safeGet(cols, columnMap, "month");
-                if (emp.month.isEmpty())
-                    emp.month = "Jul-26"; // Default for demo format
+                if (useSelectedMonth) {
+                    emp.month = runMonth;
+                } else {
+                    emp.month = safeGet(cols, columnMap, "month");
+                    if (emp.month.isEmpty())
+                        emp.month = "Jul-26"; // Default for legacy files with no Month column
+                }
 
                 emp.srNo = safeGet(cols, columnMap, "sr.no.");
                 emp.eCode = eCodeVal;
@@ -325,22 +346,25 @@ public class CsvReaderService {
 
                 emp.bankName = safeGet(cols, columnMap, "bank name");
                 emp.bankAccountNo = safeGet(cols, columnMap, "bank a/c no.");
+                emp.ifscCode = safeGet(cols, columnMap, "ifsc code");
                 emp.performanceBonus = safeGet(cols, columnMap, "performance bonus");
                 emp.officeExpense = safeGet(cols, columnMap, "office expense");
                 emp.leavePayment = safeGet(cols, columnMap, "leave payment");
                 Utils.LogUtils.debug("Employee data mapped successfully for E.Code: {}", emp.eCode);
 
                 // --- Month Consistency Check (FR-19) ---
-                // Validates that every row in the file belongs to the same pay period.
-                // Mixed months indicate human error during CSV compilation.
-                if (fileMonth == null) {
-                    fileMonth = emp.month;
-                    Utils.LogUtils.info("Payroll month detected: {}", fileMonth);
-                } else if (!fileMonth.equals(emp.month)) {
-                    String err = "Data Error - Row " + rowNum + ": The payroll month for this employee (" + emp.month + ") conflicts with the overall file month (" + fileMonth + "). Please ensure all employees have the same month.";
-                    Utils.LogUtils.logHrWarning(err);
-                    throw new IllegalArgumentException("Conflicting run month on row " + rowNum + ": expected "
-                            + fileMonth + " but found " + emp.month);
+                // Only meaningful when the month comes from the file; when the user
+                // selected the payroll month every row carries it by construction.
+                if (!useSelectedMonth) {
+                    if (fileMonth == null) {
+                        fileMonth = emp.month;
+                        Utils.LogUtils.info("Payroll month detected: {}", fileMonth);
+                    } else if (!fileMonth.equals(emp.month)) {
+                        String err = "Data Error - Row " + rowNum + ": The payroll month for this employee (" + emp.month + ") conflicts with the overall file month (" + fileMonth + "). Please ensure all employees have the same month.";
+                        Utils.LogUtils.logHrWarning(err);
+                        throw new IllegalArgumentException("Conflicting run month on row " + rowNum + ": expected "
+                                + fileMonth + " but found " + emp.month);
+                    }
                 }
 
                 // Validate presence of essential fields
@@ -400,11 +424,11 @@ public class CsvReaderService {
                         java.time.format.DateTimeFormatter monthFormat = java.time.format.DateTimeFormatter.ofPattern("MMM-yy", java.util.Locale.ENGLISH);
                         java.time.format.DateTimeFormatter dojFormat = java.time.format.DateTimeFormatter.ofPattern("d-MMM-yy", java.util.Locale.ENGLISH);
                         
-                        java.time.YearMonth runMonth = java.time.YearMonth.parse(emp.month, monthFormat);
+                        java.time.YearMonth runMonthYm = java.time.YearMonth.parse(emp.month, monthFormat);
                         java.time.LocalDate dojDate = java.time.LocalDate.parse(emp.doj.trim(), dojFormat);
                         java.time.YearMonth dojMonth = java.time.YearMonth.from(dojDate);
-                        
-                        if (runMonth.isBefore(dojMonth)) {
+
+                        if (runMonthYm.isBefore(dojMonth)) {
                             String err = "Row " + rowNum + ": Run month (" + emp.month + ") is before Date of Joining (" + emp.doj + ")";
                             errors.add(new CsvError(emp.eCode, emp.name, err));
                             Utils.LogUtils.logHrWarning("CSV Parse Warning - " + err);
@@ -459,20 +483,27 @@ public class CsvReaderService {
                     Utils.LogUtils.logHrWarning("Reconciliation Warning - " + err);
                 }
 
-                int calculatedDeduction = pt + loanDeducted + tds;
-                if (Math.abs(totalDeduction - calculatedDeduction) > 2) {
-                    String err = "Row " + rowNum + ": Total Deduction mismatch for E.Code " + emp.eCode + " (Calc: "
-                            + calculatedDeduction + ", Found: " + totalDeduction + ")";
-                    errors.add(new CsvError(emp.eCode, emp.name, err));
-                    Utils.LogUtils.logHrWarning("Reconciliation Warning - " + err);
-                }
+                // Total Deduction and Net Pay are only reconciled for legacy files that
+                // still carry a "Loan Deducted" column. For Master CTC (v2) files the
+                // application computes these authoritatively from the CSV earnings plus
+                // PT/TDS plus the HRMS deductions (loan EMI, LOP leave), so the sheet's
+                // own Total Deduction / Net Pay columns are informational only.
+                if (columnMap.containsKey("loan deducted")) {
+                    int calculatedDeduction = pt + loanDeducted + tds;
+                    if (Math.abs(totalDeduction - calculatedDeduction) > 2) {
+                        String err = "Row " + rowNum + ": Total Deduction mismatch for E.Code " + emp.eCode + " (Calc: "
+                                + calculatedDeduction + ", Found: " + totalDeduction + ")";
+                        errors.add(new CsvError(emp.eCode, emp.name, err));
+                        Utils.LogUtils.logHrWarning("Reconciliation Warning - " + err);
+                    }
 
-                int calculatedNetPay = netSalary - totalDeduction;
-                if (Math.abs(netPay - calculatedNetPay) > 2) {
-                    String err = "Row " + rowNum + ": Net Pay mismatch for E.Code " + emp.eCode + " (Calc: "
-                            + calculatedNetPay + ", Found: " + netPay + ")";
-                    errors.add(new CsvError(emp.eCode, emp.name, err));
-                    Utils.LogUtils.logHrWarning("Reconciliation Warning - " + err);
+                    int calculatedNetPay = netSalary - totalDeduction;
+                    if (Math.abs(netPay - calculatedNetPay) > 2) {
+                        String err = "Row " + rowNum + ": Net Pay mismatch for E.Code " + emp.eCode + " (Calc: "
+                                + calculatedNetPay + ", Found: " + netPay + ")";
+                        errors.add(new CsvError(emp.eCode, emp.name, err));
+                        Utils.LogUtils.logHrWarning("Reconciliation Warning - " + err);
+                    }
                 }
 
                 // --- UI Display Data Preparation ---

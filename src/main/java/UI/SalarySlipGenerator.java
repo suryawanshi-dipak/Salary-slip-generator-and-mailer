@@ -63,10 +63,11 @@ import javax.swing.table.TableRowSorter;
  * It is built using Java Swing and custom-drawn graphical components.
  * 
  * CORE WORKFLOWS:
- * 1. CSV Upload: Invokes CsvReaderService to parse raw data and display
- * employee list.
- * 2. PDF Generation: Passes raw rows to PdfUtil to output password-secured PDF
- * slips.
+ * 1. Master CTC Configuration: The user sets a permanent path to the Master CTC
+ * CSV via the Configuration dialog; it is parsed by CsvReaderService and shown
+ * in the employee list, and re-read on every "Generate Slips".
+ * 2. PDF Generation: Passes rows (merged with imported HRMS data) to PdfUtil to
+ * output password-secured PDF slips.
  * 3. Email Dispatch: Leverages MailUtil to securely email attachments to
  * employees.
  * 4. Logs Management: Has a Log Toggle Button to dynamically enable/disable
@@ -186,6 +187,16 @@ public class SalarySlipGenerator extends JFrame {
     
     private JButton generateSlipsButton;
 
+    /* ===================== HRMS IMPORTED DATA (in-memory) ===================== */
+    /** Loan installments pulled from HRMS via "Import Data from HRMS"; merged at slip-generation time. */
+    private Services.LoanService.LoanResponse hrmsLoanData;
+    /** Approved reimbursement claims pulled from HRMS. */
+    private Services.ReimbursementService.ReimbursementResponse hrmsReimbursementData;
+    /** LOP (Loss of Pay) leave days per employee pulled from HRMS. */
+    private Services.LeaveService.LeaveResponse hrmsLeaveData;
+    /** The YYYY-MM the HRMS data above was fetched for; {@code null} until an import runs. */
+    private String hrmsDataMonth;
+
     /* ===================== CONSTRUCTOR ===================== */
     /**
      * Initializes the main window and all its components.
@@ -223,122 +234,47 @@ public class SalarySlipGenerator extends JFrame {
 
     /* ===================== HEADER ===================== */
     private java.util.List<Services.CsvReaderService.EmployeeSalary> currentRawCsvData = new java.util.ArrayList<>();
-    private String lastUploadedCsvPath = null;
+    /** Path of the configured Master CTC CSV file currently loaded into the table. */
+    private String masterCtcPath = null;
 
     /**
-     * Parses the CSV file and dynamically queries the HRMS backend to merge 
-     * Loans, Reimbursements, and LOP (Loss of Pay) Leaves into the employee records.
-     * 
-     * This heavy I/O operation is offloaded to a SwingWorker background thread to 
-     * ensure the UI remains responsive during HTTP network calls.
-     * 
-     * @param filePath The absolute path of the CSV file selected by the user
+     * Parses the Master CTC CSV file on a background thread and loads the rows
+     * into the table.
+     *
+     * <p>HRMS data (Loans, Reimbursements, LOP Leaves) is <b>not</b> fetched here.
+     * The user pulls it with the "Import Data from HRMS" button (or it is
+     * auto-imported by "Generate Slips"); the imported data is held in memory and
+     * merged into the rows at generation time. Loading a new CSV clears any
+     * previously imported data.</p>
+     *
+     * @param filePath         the absolute path of the Master CTC CSV file
+     * @param onComplete        optional action run on the EDT after the rows have
+     *                          loaded successfully (not run on a parse error or an
+     *                          invalid run month); used by "Generate Slips" to
+     *                          continue after a fresh read
+     * @param showInfoDialog    show the "data loaded" confirmation (user-initiated loads only)
+     * @param clearExistingPdfs delete any previously generated PDFs for the run month
+     *                          (a fresh load starts a fresh run); skipped on startup
      */
-    private void loadCsvData(String filePath) {
+    private void loadCsvData(String filePath, Runnable onComplete, boolean showInfoDialog, boolean clearExistingPdfs) {
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+
+        // A freshly loaded payroll file invalidates any previously imported HRMS data.
+        hrmsLoanData = null;
+        hrmsReimbursementData = null;
+        hrmsLeaveData = null;
+        hrmsDataMonth = null;
+
+        // The payroll month comes from the selector, not the file - capture it on the EDT.
+        final String runMonth = getFormattedMonth();
 
         javax.swing.SwingWorker<Services.CsvReaderService.CsvParseResult, Void> worker = new javax.swing.SwingWorker<>() {
             @Override
             protected Services.CsvReaderService.CsvParseResult doInBackground() throws Exception {
-                Utils.LogUtils.info("User loading CSV file in background: {}", filePath);
-                Services.CsvReaderService.CsvParseResult result = Services.CsvReaderService.parsePayrollCsv(filePath);
-                Utils.LogUtils.info("CSV parsed successfully. Total Employees: {}", result.employees.size());
-
-                if (!result.employees.isEmpty()) {
-                    String fileMonth = result.employees.get(0).month;
-                    java.time.format.DateTimeFormatter monthFormat = java.time.format.DateTimeFormatter.ofPattern("MMM-yy", java.util.Locale.ENGLISH);
-                    java.time.YearMonth parsedRunMonth = java.time.YearMonth.parse(fileMonth, monthFormat);
-                    
-                    String apiMonth = String.format("%04d-%02d", parsedRunMonth.getYear(), parsedRunMonth.getMonthValue());
-
-                    // 1. Fetch API Data
-                    Services.LoanService.LoanResponse loanRes = null;
-                    try {
-                        loanRes = Services.LoanService.fetchLoans(Services.LoanService.getApiUrl(), Services.LoanService.getApiKey(), apiMonth);
-                    } catch(Exception e) { Utils.LogUtils.warn("Failed to fetch loans: {}", e.getMessage()); }
-
-                    Services.ReimbursementService.ReimbursementResponse reimbRes = null;
-                    try {
-                        reimbRes = Services.ReimbursementService.fetchClaims(Services.ReimbursementService.getApiUrl(), Services.ReimbursementService.getApiKey(), apiMonth);
-                    } catch(Exception e) { Utils.LogUtils.warn("Failed to fetch reimbursements: {}", e.getMessage()); }
-
-                    Services.LeaveService.LeaveResponse leaveRes = null;
-                    try {
-                        leaveRes = Services.LeaveService.fetchLeaves(Services.LeaveService.getApiUrl(), Services.LeaveService.getApiKey(), apiMonth);
-                    } catch(Exception e) { Utils.LogUtils.warn("Failed to fetch leaves: {}", e.getMessage()); }
-
-                    // 2. Merge Data and Calculate Net Salary
-                    for (int i = 0; i < result.employees.size(); i++) {
-                        Services.CsvReaderService.EmployeeSalary emp = result.employees.get(i);
-                        Object[] row = result.rows[i];
-                        
-                        double emi = 0.0;
-                        double reimb = 0.0;
-                        double lopDays = 0.0;
-
-                        if (loanRes != null && loanRes.installments != null) {
-                            for (Services.LoanService.Installment inst : loanRes.installments) {
-                                if (inst.employee_id.equals(emp.eCode)) {
-                                    try { 
-                                        emi += Double.parseDouble(inst.emi_amount); 
-                                        if (inst.loan_amount != null) emp.loanAmount = inst.loan_amount;
-                                        if (inst.outstanding_amount != null) emp.outstandingAmount = inst.outstanding_amount;
-                                    } catch(Exception ignored){}
-                                }
-                            }
-                        }
-
-                        if (reimbRes != null && reimbRes.claims != null) {
-                            for (Services.ReimbursementService.Claim claim : reimbRes.claims) {
-                                if (claim.employee_id.equals(emp.eCode)) {
-                                    try { reimb += Double.parseDouble(claim.amount); } catch(Exception ignored){}
-                                }
-                            }
-                        }
-
-                        if (leaveRes != null && leaveRes.data != null) {
-                            if (leaveRes.data.containsKey(emp.eCode)) {
-                                lopDays = leaveRes.data.get(emp.eCode);
-                            }
-                        }
-
-                        emp.loanDeducted = String.valueOf((int)Math.round(emi));
-                        emp.reimbursementAmount = String.valueOf((int)Math.round(reimb));
-                        emp.lopDays = String.valueOf(lopDays);
-
-                        double basic = 0;
-                        try { basic = Double.parseDouble(emp.totalBasic); } catch(Exception e){}
-                        
-                        double allowances = 0;
-                        try { allowances = Double.parseDouble(emp.totalHra) + Double.parseDouble(emp.totalSplAllowance) + Double.parseDouble(emp.totalKra); } catch(Exception e){}
-                        
-                        double pt = 0, tds = 0;
-                        try { pt = Double.parseDouble(emp.pt); } catch(Exception e){}
-                        try { tds = Double.parseDouble(emp.tds); } catch(Exception e){}
-                        double taxes = pt + tds;
-
-                        double perDaySalary = basic / 30.0;
-                        double leaveDeduction = lopDays * perDaySalary;
-                        emp.leaveDeduction = String.valueOf((int)Math.round(leaveDeduction));
-                        
-                        double newTotalDeduction = taxes + leaveDeduction + emi;
-                        emp.totalDeduction = String.valueOf((int)Math.round(newTotalDeduction));
-                        
-                        double others = 0;
-                        try { others = Double.parseDouble(emp.performanceBonus) + Double.parseDouble(emp.officeExpense) + Double.parseDouble(emp.leavePayment); } catch(Exception e){}
-                        
-                        double totalEarnings = basic + allowances + others + reimb;
-                        emp.netSalary = String.valueOf((int)Math.round(totalEarnings));
-                        
-                        double netPay = totalEarnings - newTotalDeduction;
-                        if (netPay < 0) netPay = 0;
-                        emp.netPay = String.valueOf((int)Math.round(netPay));
-                        
-                        // Update UI row data (Net Pay)
-                        row[4] = "\u20B9" + emp.netPay;
-                    }
-                }
-
+                Utils.LogUtils.info("Loading Master CTC file in background: {} for month {}", filePath, runMonth);
+                Services.CsvReaderService.CsvParseResult result =
+                        Services.CsvReaderService.parsePayrollCsv(filePath, runMonth);
+                Utils.LogUtils.info("Master CTC parsed successfully. Total Employees: {}", result.employees.size());
                 return result;
             }
 
@@ -350,35 +286,31 @@ public class SalarySlipGenerator extends JFrame {
                     currentRawCsvData = result.employees;
 
                     if (!currentRawCsvData.isEmpty()) {
-                        String fileMonth = currentRawCsvData.get(0).month;
-                        String fullMonth = formatMonthFull(fileMonth);
-                        
                         try {
                             java.time.format.DateTimeFormatter monthFormat = java.time.format.DateTimeFormatter.ofPattern("MMM-yy", java.util.Locale.ENGLISH);
-                            java.time.YearMonth parsedRunMonth = java.time.YearMonth.parse(fileMonth, monthFormat);
+                            java.time.YearMonth parsedRunMonth = java.time.YearMonth.parse(runMonth, monthFormat);
                             java.time.YearMonth currentMonth = java.time.YearMonth.now();
 
                             if (!parsedRunMonth.isBefore(currentMonth)) {
                                 JOptionPane.showMessageDialog(SalarySlipGenerator.this,
-                                        "Cannot process salary slips for the current or future months. Please upload a CSV for a past month.",
+                                        "Cannot process salary slips for the current or future months. "
+                                                + "Please select a past payroll month.",
                                         "Invalid Run Month", JOptionPane.ERROR_MESSAGE);
                                 return;
                             }
                         } catch (Exception e) {}
-                        
-                        monthCombo.removeAllItems();
-                        monthCombo.addItem(fullMonth);
-                        monthCombo.setSelectedItem(fullMonth);
 
-                        String shortMonth = getFormattedMonth();
-                        String outputDir = System.getProperty("user.home")
-                                + java.io.File.separator + "SalarySlips"
-                                + java.io.File.separator + shortMonth;
-                        java.io.File dir = new java.io.File(outputDir);
-                        if (dir.exists() && dir.isDirectory()) {
-                            java.io.File[] files = dir.listFiles((d, name) -> name.toLowerCase().endsWith(".pdf"));
-                            if (files != null) {
-                                for (java.io.File f : files) { f.delete(); }
+                        if (clearExistingPdfs) {
+                            String shortMonth = getFormattedMonth();
+                            String outputDir = System.getProperty("user.home")
+                                    + java.io.File.separator + "SalarySlips"
+                                    + java.io.File.separator + shortMonth;
+                            java.io.File dir = new java.io.File(outputDir);
+                            if (dir.exists() && dir.isDirectory()) {
+                                java.io.File[] files = dir.listFiles((d, name) -> name.toLowerCase().endsWith(".pdf"));
+                                if (files != null) {
+                                    for (java.io.File f : files) { f.delete(); }
+                                }
                             }
                         }
                     }
@@ -393,17 +325,22 @@ public class SalarySlipGenerator extends JFrame {
                         for (Services.CsvReaderService.CsvError err : result.errors) {
                             String empId = (err.eCode == null || err.eCode.isEmpty()) ? "Unknown" : err.eCode;
                             String empName = (err.name == null || err.name.isEmpty()) ? "Unknown" : err.name;
-                            failedRecords.add(new FailedRecord(empId, empName, err.reason, "Correct CSV data"));
+                            failedRecords.add(new FailedRecord(empId, empName, err.reason, "Correct Master CTC data"));
                         }
                         showFailedRecordsDialog();
-                    } else {
+                    } else if (showInfoDialog) {
                         JOptionPane.showMessageDialog(SalarySlipGenerator.this,
-                                "Data loaded successfully and APIs fetched! You can now generate the slips.",
+                                "Master CTC data loaded successfully! Click \"Generate Slips\" to import "
+                                        + "HRMS data and produce the salary slips.",
                                 "Success",
                                 JOptionPane.INFORMATION_MESSAGE);
                     }
+
+                    if (onComplete != null) {
+                        onComplete.run();
+                    }
                 } catch (Exception ex) {
-                    Utils.LogUtils.error("Error while processing CSV and APIs: {}", ex.getMessage(), ex);
+                    Utils.LogUtils.error("Error while loading Master CTC CSV: {}", ex.getMessage(), ex);
                     JOptionPane.showMessageDialog(SalarySlipGenerator.this,
                             "Error: " + ex.getMessage(),
                             "Error",
@@ -412,6 +349,257 @@ public class SalarySlipGenerator extends JFrame {
             }
         };
         worker.execute();
+    }
+
+    /**
+     * Fired when the user picks a different payroll month. Updates the header label
+     * and, if a Master CTC file is configured, re-reads it so every row carries the
+     * new month (which also discards HRMS data imported for the old month).
+     */
+    private void onPayrollMonthChanged() {
+        if (monthCombo.getSelectedItem() != null) {
+            payrollMonthLabel.setText(monthCombo.getSelectedItem() + " Payroll");
+        }
+        if (masterCtcPath != null && Services.ConfigService.validate() == null) {
+            loadCsvData(masterCtcPath, this::filterTable, false, false);
+        } else {
+            filterTable();
+        }
+    }
+
+    /**
+     * Returns the payroll month currently selected in the header, as {@code YYYY-MM},
+     * or {@code null} if it cannot be determined.
+     */
+    private String selectedApiMonth() {
+        try {
+            java.time.format.DateTimeFormatter mf = java.time.format.DateTimeFormatter
+                    .ofPattern("MMM-yy", java.util.Locale.ENGLISH);
+            java.time.YearMonth ym = java.time.YearMonth.parse(getFormattedMonth(), mf);
+            return String.format("%04d-%02d", ym.getYear(), ym.getMonthValue());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Handler for the "Import Data from HRMS" header button.
+     *
+     * <p>Calls all three HRMS payroll-export endpoints (Loans, Reimbursements, LOP
+     * Leaves) for the selected payroll month in one background action and stores the
+     * responses in memory ({@link #hrmsLoanData}, {@link #hrmsReimbursementData},
+     * {@link #hrmsLeaveData}). Nothing is merged into the table here &mdash;
+     * {@link #applyHrmsData} is run later from the "Generate Slips" action.</p>
+     */
+    private void importHrmsData() {
+        final String month = selectedApiMonth();
+        if (month == null) {
+            JOptionPane.showMessageDialog(this,
+                    "Please select a valid payroll month first.",
+                    "Import Data from HRMS", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+
+        javax.swing.SwingWorker<java.util.List<String>, Void> worker = new javax.swing.SwingWorker<>() {
+            @Override
+            protected java.util.List<String> doInBackground() {
+                return fetchHrmsDataInto(month);
+            }
+
+            @Override
+            protected void done() {
+                setCursor(Cursor.getDefaultCursor());
+
+                java.util.List<String> failures;
+                try {
+                    failures = get();
+                } catch (Exception ex) {
+                    failures = new java.util.ArrayList<>(java.util.List.of("Unexpected error: " + ex.getMessage()));
+                }
+
+                int loans = (hrmsLoanData != null && hrmsLoanData.installments != null) ? hrmsLoanData.installments.size() : 0;
+                int claims = (hrmsReimbursementData != null && hrmsReimbursementData.claims != null) ? hrmsReimbursementData.claims.size() : 0;
+                int lopEmployees = (hrmsLeaveData != null && hrmsLeaveData.data != null) ? hrmsLeaveData.data.size() : 0;
+
+                Utils.LogUtils.info("HRMS import complete for {}: {} EMIs, {} claims, {} LOP employees",
+                        month, loans, claims, lopEmployees);
+
+                StringBuilder sb = new StringBuilder();
+                sb.append("<html><h3 style='margin:0; color:#173463;'>HRMS Data Imported (").append(month).append(")</h3>");
+                sb.append("<p style='margin-top:8px;'>Loan EMIs: <b>").append(loans).append("</b><br>");
+                sb.append("Reimbursements: <b>").append(claims).append("</b><br>");
+                sb.append("Employees with LOP leaves: <b>").append(lopEmployees).append("</b></p>");
+                if (!failures.isEmpty()) {
+                    sb.append("<p style='color:#dc2626;'>Some endpoints could not be reached:<br>");
+                    for (String f : failures) {
+                        sb.append("&bull; ").append(f).append("<br>");
+                    }
+                    sb.append("</p>");
+                }
+                sb.append("<p style='color:#777777;'>This data is held in memory and applied when you click "
+                        + "<b>Generate Slips</b>.</p></html>");
+
+                JOptionPane.showMessageDialog(SalarySlipGenerator.this, new JLabel(sb.toString()),
+                        "Import Data from HRMS",
+                        failures.isEmpty() ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE);
+            }
+        };
+        worker.execute();
+    }
+
+    /**
+     * Synchronously calls the three HRMS payroll-export endpoints for {@code month}
+     * and stores the responses in memory ({@link #hrmsLoanData},
+     * {@link #hrmsReimbursementData}, {@link #hrmsLeaveData}, {@link #hrmsDataMonth}).
+     *
+     * <p>Used both by the "Import Data from HRMS" button (off the EDT, via a
+     * SwingWorker) and by "Generate Slips" when the user hasn't imported yet.
+     * A failing endpoint leaves its field {@code null} and is reported, but the
+     * other endpoints still apply.</p>
+     *
+     * @param month target payroll month in {@code YYYY-MM}
+     * @return human-readable messages for any endpoint that failed (empty on full success)
+     */
+    private java.util.List<String> fetchHrmsDataInto(String month) {
+        java.util.List<String> failures = new java.util.ArrayList<>();
+        Utils.LogUtils.info("Fetching HRMS data for month: {}", month);
+
+        hrmsLoanData = null;
+        hrmsReimbursementData = null;
+        hrmsLeaveData = null;
+
+        try {
+            hrmsLoanData = Services.LoanService.fetchLoans(
+                    Services.LoanService.getApiUrl(), Services.LoanService.getApiKey(), month);
+        } catch (Exception ex) {
+            failures.add("Loan EMIs — " + ex.getMessage());
+            Utils.LogUtils.warn("HRMS loan fetch failed: {}", ex.getMessage());
+        }
+        try {
+            hrmsReimbursementData = Services.ReimbursementService.fetchClaims(
+                    Services.ReimbursementService.getApiUrl(), Services.ReimbursementService.getApiKey(), month);
+        } catch (Exception ex) {
+            failures.add("Reimbursements — " + ex.getMessage());
+            Utils.LogUtils.warn("HRMS reimbursement fetch failed: {}", ex.getMessage());
+        }
+        try {
+            hrmsLeaveData = Services.LeaveService.fetchLeaves(
+                    Services.LeaveService.getApiUrl(), Services.LeaveService.getApiKey(), month);
+        } catch (Exception ex) {
+            failures.add("LOP Leaves — " + ex.getMessage());
+            Utils.LogUtils.warn("HRMS leave fetch failed: {}", ex.getMessage());
+        }
+
+        hrmsDataMonth = month;
+        return failures;
+    }
+
+    /**
+     * Merges the in-memory HRMS data onto the given employee rows: injects the
+     * loan EMI, reimbursement and LOP-day values, then recomputes earnings,
+     * deductions and net pay using the same formula the app has always used.
+     *
+     * <p>Safe to call repeatedly &mdash; every figure is recomputed from the
+     * original CSV-parsed fields. A no-op if nothing has been imported.</p>
+     *
+     * @param employees the parsed payroll rows to update in place
+     * @return the number of employees that matched at least one HRMS record
+     */
+    private int applyHrmsData(java.util.List<Services.CsvReaderService.EmployeeSalary> employees) {
+        if (hrmsLoanData == null && hrmsReimbursementData == null && hrmsLeaveData == null) {
+            return 0;
+        }
+
+        int matched = 0;
+        for (Services.CsvReaderService.EmployeeSalary emp : employees) {
+            double emi = 0.0, reimb = 0.0, leaveDaysTotal = 0.0, lopDays = 0.0;
+            boolean hit = false;
+
+            if (hrmsLoanData != null && hrmsLoanData.installments != null) {
+                for (Services.LoanService.Installment inst : hrmsLoanData.installments) {
+                    if (inst.employee_id != null && inst.employee_id.equals(emp.eCode)) {
+                        try {
+                            emi += Double.parseDouble(inst.emi_amount);
+                            if (inst.loan_amount != null) emp.loanAmount = inst.loan_amount;
+                            if (inst.outstanding_amount != null) emp.outstandingAmount = inst.outstanding_amount;
+                            hit = true;
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+            }
+
+            if (hrmsReimbursementData != null && hrmsReimbursementData.claims != null) {
+                for (Services.ReimbursementService.Claim claim : hrmsReimbursementData.claims) {
+                    if (claim.employee_id != null && claim.employee_id.equals(emp.eCode)) {
+                        try {
+                            reimb += Double.parseDouble(claim.amount);
+                            hit = true;
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+            }
+
+            if (hrmsLeaveData != null && hrmsLeaveData.data != null && hrmsLeaveData.data.containsKey(emp.eCode)) {
+                leaveDaysTotal = hrmsLeaveData.data.get(emp.eCode); // all approved leave days in the month
+                hit = true;
+            }
+            if (hrmsLeaveData != null && hrmsLeaveData.lop != null && hrmsLeaveData.lop.get(emp.eCode) != null) {
+                lopDays = hrmsLeaveData.lop.get(emp.eCode);         // unpaid portion (HRMS applies balance + probation)
+            }
+
+            if (hit) matched++;
+
+            emp.loanDeducted = String.valueOf((int) Math.round(emi));
+            emp.reimbursementAmount = String.valueOf((int) Math.round(reimb));
+            emp.lopDays = String.valueOf(lopDays);
+
+            // Leaves Availed = all approved leave days; Paid Days = 30 minus those.
+            int leaveRounded = (int) Math.round(leaveDaysTotal);
+            emp.leavesAvailed = String.valueOf(leaveRounded);
+            emp.monthDays = "30";
+            emp.daysWorked = String.valueOf(Math.max(0, 30 - leaveRounded));
+
+            double basic = 0;
+            try { basic = Double.parseDouble(emp.totalBasic); } catch (Exception e) {}
+
+            double allowances = 0;
+            try {
+                allowances = Double.parseDouble(emp.totalHra) + Double.parseDouble(emp.totalSplAllowance)
+                        + Double.parseDouble(emp.totalKra);
+            } catch (Exception e) {}
+
+            double pt = 0, tds = 0;
+            try { pt = Double.parseDouble(emp.pt); } catch (Exception e) {}
+            try { tds = Double.parseDouble(emp.tds); } catch (Exception e) {}
+            double taxes = pt + tds;
+
+            // Leave deduction = unpaid (LOP) days * per-day basic wage. HRMS has
+            // already applied the leave balance and the Probation rule when deriving
+            // lopDays, so this is a straight multiply.
+            double perDaySalary = basic / 30.0;
+            double leaveDeduction = lopDays * perDaySalary;
+            emp.leaveDeduction = String.valueOf((int) Math.round(leaveDeduction));
+
+            double newTotalDeduction = taxes + leaveDeduction + emi;
+            emp.totalDeduction = String.valueOf((int) Math.round(newTotalDeduction));
+
+            double others = 0;
+            try {
+                others = Double.parseDouble(emp.performanceBonus) + Double.parseDouble(emp.officeExpense)
+                        + Double.parseDouble(emp.leavePayment);
+            } catch (Exception e) {}
+
+            double totalEarnings = basic + allowances + others + reimb;
+            emp.netSalary = String.valueOf((int) Math.round(totalEarnings));
+
+            double netPay = totalEarnings - newTotalDeduction;
+            if (netPay < 0) netPay = 0;
+            emp.netPay = String.valueOf((int) Math.round(netPay));
+        }
+        return matched;
     }
 
     /**
@@ -446,188 +634,436 @@ public class SalarySlipGenerator extends JFrame {
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 14, 0));
         right.setOpaque(false);
 
-        // Refresh Button
+        // Refresh Button \u2014 re-reads the configured Master CTC file
         JButton refreshBtn = makeHeaderButton("\uE72C", "", PRIMARY_PURPLE, WHITE,
                 e -> {
-                    if (lastUploadedCsvPath == null) {
-                        JOptionPane.showMessageDialog(this,
-                                "No CSV file has been uploaded yet.",
-                                "Warning",
-                                JOptionPane.WARNING_MESSAGE);
+                    String err = Services.ConfigService.validate();
+                    if (err != null) {
+                        JOptionPane.showMessageDialog(this, err, "Not Configured", JOptionPane.WARNING_MESSAGE);
                         return;
                     }
-                    loadCsvData(lastUploadedCsvPath);
+                    masterCtcPath = Services.ConfigService.getMasterCtcPath();
+                    loadCsvData(masterCtcPath, null, true, true);
                 });
         refreshBtn.setPreferredSize(new Dimension(42, 42));
         refreshBtn.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
         right.add(refreshBtn);
 
-        // Manual Fetch Menu Button
-        JButton fetchApiBtn = makeHeaderButton("\uE118", "Export APIs \u25BC", new Color(41, 128, 185), WHITE, null);
-        javax.swing.JPopupMenu fetchMenu = new javax.swing.JPopupMenu();
-        javax.swing.JMenuItem fetchLoansItem = new javax.swing.JMenuItem("Export Loan EMIs");
-        fetchLoansItem.addActionListener(e -> showLoanFetchDialog());
-        javax.swing.JMenuItem fetchReimbItem = new javax.swing.JMenuItem("Export Reimbursements");
-        fetchReimbItem.addActionListener(e -> showReimbursementFetchDialog());
-        javax.swing.JMenuItem fetchLeavesItem = new javax.swing.JMenuItem("Export LOP Leaves");
-        fetchLeavesItem.addActionListener(e -> showLeaveFetchDialog());
-        fetchMenu.add(fetchLoansItem);
-        fetchMenu.add(fetchReimbItem);
-        fetchMenu.add(fetchLeavesItem);
-        fetchApiBtn.addActionListener(e -> fetchMenu.show(fetchApiBtn, 0, fetchApiBtn.getHeight()));
-        right.add(fetchApiBtn);
+        // Import Data from HRMS \u2014 one click fetches Loans, Reimbursements and LOP
+        // Leaves for the payroll month and holds them in memory; the data is merged
+        // into the rows when "Generate Slips" is clicked.
+        JButton importHrmsBtn = makeHeaderButton("\uE118", "Import Data from HRMS", new Color(41, 128, 185), WHITE,
+                e -> importHrmsData());
+        importHrmsBtn.setPreferredSize(new Dimension(210, 42));
+        right.add(importHrmsBtn);
 
 
-        // Upload CSV Button
-        right.add(makeHeaderButton("\uE898", "Upload CSV", UPLOAD_GREEN, WHITE,
-                e -> {
-                    JFileChooser chooser = new JFileChooser();
-                    chooser.setDialogTitle("Select Payroll CSV File");
-                    int res = chooser.showOpenDialog(this);
-
-                    if (res == JFileChooser.APPROVE_OPTION) {
-                        lastUploadedCsvPath = chooser.getSelectedFile().getAbsolutePath();
-                        loadCsvData(lastUploadedCsvPath);
-                    }
-                }));
+        // Configuration Button \u2014 sets the permanent Master CTC CSV file path
+        right.add(makeHeaderButton("\uE713", "Configuration", UPLOAD_GREEN, WHITE,
+                e -> showConfigurationDialog()));
 
         // Generate Slips Button
         generateSlipsButton = makeHeaderButton("\uE74C", "Generate Slips", PRIMARY_PURPLE, WHITE,
-                e -> {
-                    if (currentRawCsvData == null || currentRawCsvData.isEmpty()) {
-                        JOptionPane.showMessageDialog(this,
-                                "No data uploaded! Please upload a CSV first.",
-                                "Warning",
-                                JOptionPane.WARNING_MESSAGE);
-                        return;
-                    }
-
-                    String formattedMonth = getFormattedMonth();
-                    String firstEmpMonth = currentRawCsvData.get(0).month;
-
-                    if (firstEmpMonth != null && !firstEmpMonth.equalsIgnoreCase(formattedMonth)) {
-                        JOptionPane.showMessageDialog(this,
-                                "Run month mismatch! Selected month (" + formattedMonth
-                                        + ") does not match the CSV file's month (" + firstEmpMonth
-                                        + ").\nPlease check your selection.",
-                                "Generation Blocked",
-                                JOptionPane.ERROR_MESSAGE);
-                        return;
-                    }
-
-                    String outputDir = System.getProperty("user.home")
-                            + java.io.File.separator + "SalarySlips"
-                            + java.io.File.separator + formattedMonth;
-
-                    int successCount = 0;
-                    int failCount = 0;
-
-                    for (int i = 0; i < currentRawCsvData.size(); i++) {
-
-                        Services.CsvReaderService.EmployeeSalary emp = currentRawCsvData.get(i);
-
-                        if (emp.eCode == null || emp.eCode.trim().isEmpty())
-                            continue;
-
-                        String empId = emp.eCode.trim();
-                        String filename = empId + "_" + formattedMonth + ".pdf";
-
-                        try {
-
-                            Utils.LogUtils.info("Generating salary slip for Employee ID: {}", empId);
-
-                            String path = Utils.PdfUtil.generateSalarySlip(
-                                    emp,
-                                    outputDir,
-                                    formattedMonth,
-                                    filename);
-                            if (path != null) {
-                                Utils.LogUtils.info(
-                                        "Salary slip generated successfully for Employee ID: {}",
-                                        empId);
-
-                                successCount++;
-
-                                if (i < model.getRowCount()) {
-                                    model.setValueAt("Generated", i, 6);
-                                }
-
-                            } else {
-
-                                Utils.LogUtils.warn(
-                                        "PDF generation returned null for Employee ID: {}",
-                                        empId);
-
-                                failCount++;
-
-                                failedRecords.add(new FailedRecord(
-                                        empId,
-                                        emp.name,
-                                        "PDF Generation returned null",
-                                        "Check Logs"));
-                            }
-
-                        } catch (Exception ex) {
-
-                            Utils.LogUtils.error(
-                                    "PDF generation failed for Employee ID {}: {}",
-                                    empId,
-                                    ex.getMessage(),
-                                    ex);
-
-                            failCount++;
-
-                            failedRecords.add(new FailedRecord(
-                                    empId,
-                                    emp.name,
-                                    "PDF Error: " + ex.getMessage(),
-                                    "Check PDF templates or permissions"));
-                        }
-                    }
-
-                    Utils.LogUtils.info(
-                            "Salary slip generation completed. Success={}, Failed={}",
-                            successCount,
-                            failCount);
-
-                    updateDashboardStats();
-
-                    if (failCount > 0) {
-                        JPanel p = new JPanel(new BorderLayout(15, 0));
-                        JLabel icon = new JLabel("\uE7BA");
-                        icon.setFont(new Font("Segoe MDL2 Assets", Font.PLAIN, 40));
-                        icon.setForeground(ORANGE);
-                        p.add(icon, BorderLayout.WEST);
-                        JLabel msg = new JLabel(
-                                "<html><h3 style='margin:0; padding:0; color:#173463;'>Generation Completed with Errors</h3><p style='margin-top:8px;'>Successfully generated: <b>"
-                                        + successCount
-                                        + "</b> slips</p><p style='color:#dc2626;'>Failed to generate: <b>" + failCount
-                                        + "</b> slips</p><br><p style='color:#777777;'>Opening HR Failed Records for details...</p></html>");
-                        msg.setFont(FONT);
-                        p.add(msg, BorderLayout.CENTER);
-                        JOptionPane.showMessageDialog(this, p, "Generation Result", JOptionPane.PLAIN_MESSAGE);
-                        showFailedRecordsDialog();
-                    } else {
-                        JPanel p = new JPanel(new BorderLayout(15, 0));
-                        JLabel icon = new JLabel("\uE73E");
-                        icon.setFont(new Font("Segoe MDL2 Assets", Font.PLAIN, 40));
-                        icon.setForeground(GREEN);
-                        p.add(icon, BorderLayout.WEST);
-                        JLabel msg = new JLabel(
-                                "<html><h3 style='margin:0; padding:0; color:#173463;'>Generation Successful!</h3><p style='margin-top:8px;'>Successfully generated <b>"
-                                        + successCount
-                                        + "</b> salary slips.</p><br><p style='color:#777777;'>Saved to:<br>"
-                                        + outputDir + "</p></html>");
-                        msg.setFont(FONT);
-                        p.add(msg, BorderLayout.CENTER);
-                        JOptionPane.showMessageDialog(this, p, "Generation Result", JOptionPane.PLAIN_MESSAGE);
-                    }
-                });
+                e -> onGenerateSlipsClicked());
         right.add(generateSlipsButton);
 
         header.add(left, BorderLayout.WEST);
         header.add(right, BorderLayout.EAST);
         return header;
+    }
+
+    /**
+     * Handles a "Generate Slips" click: verifies the Master CTC configuration,
+     * re-reads the file fresh from disk, then continues in {@link #runSlipGeneration()}.
+     */
+    private void onGenerateSlipsClicked() {
+        String cfgErr = Services.ConfigService.validate();
+        if (cfgErr != null) {
+            JOptionPane.showMessageDialog(this, cfgErr, "Cannot Generate Slips", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        if (selectedApiMonth() == null) {
+            JOptionPane.showMessageDialog(this, "Please select a valid payroll month.",
+                    "Cannot Generate Slips", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        masterCtcPath = Services.ConfigService.getMasterCtcPath();
+        loadCsvData(masterCtcPath, this::runSlipGeneration, false, true);
+    }
+
+    /**
+     * Produces the salary-slip PDFs from the freshly loaded Master CTC rows plus the
+     * imported HRMS data (auto-importing HRMS for the payroll month if the user has
+     * not already done so). Invoked as the completion callback of {@link #loadCsvData}.
+     */
+    private void runSlipGeneration() {
+        if (currentRawCsvData == null || currentRawCsvData.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "The configured Master CTC file produced no employee rows.",
+                    "Warning", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        String formattedMonth = getFormattedMonth();
+
+        // Ensure HRMS data (Loans / Reimbursements / LOP Leaves) is loaded for the
+        // selected payroll month, auto-importing it now if it is missing, then merge it in.
+        String apiMonth = selectedApiMonth();
+        if (apiMonth == null) {
+            JOptionPane.showMessageDialog(this,
+                    "Please select a valid payroll month.",
+                    "Generation Blocked", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        boolean haveImport = (hrmsLoanData != null || hrmsReimbursementData != null || hrmsLeaveData != null)
+                && apiMonth.equals(hrmsDataMonth);
+
+        if (!haveImport) {
+            setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+            java.util.List<String> failures = fetchHrmsDataInto(apiMonth);
+            setCursor(Cursor.getDefaultCursor());
+            if (!failures.isEmpty()) {
+                Utils.LogUtils.warn("HRMS auto-import had {} failure(s): {}",
+                        failures.size(), String.join("; ", failures));
+            }
+        }
+
+        int matched = applyHrmsData(currentRawCsvData);
+        for (int r = 0; r < currentRawCsvData.size() && r < model.getRowCount(); r++) {
+            model.setValueAt("₹" + currentRawCsvData.get(r).netPay, r, 4);
+        }
+        Utils.LogUtils.info("Applied HRMS data to {} employee(s) before slip generation", matched);
+
+        int unmatchedHrms = reportUnmatchedHrmsEmployees(currentRawCsvData);
+
+        String outputDir = System.getProperty("user.home")
+                + java.io.File.separator + "SalarySlips"
+                + java.io.File.separator + formattedMonth;
+
+        int successCount = 0;
+        int failCount = 0;
+
+        for (int i = 0; i < currentRawCsvData.size(); i++) {
+            Services.CsvReaderService.EmployeeSalary emp = currentRawCsvData.get(i);
+            if (emp.eCode == null || emp.eCode.trim().isEmpty())
+                continue;
+
+            String empId = emp.eCode.trim();
+            String filename = empId + "_" + formattedMonth + ".pdf";
+
+            try {
+                Utils.LogUtils.info("Generating salary slip for Employee ID: {}", empId);
+                String path = Utils.PdfUtil.generateSalarySlip(emp, outputDir, formattedMonth, filename);
+                if (path != null) {
+                    Utils.LogUtils.info("Salary slip generated successfully for Employee ID: {}", empId);
+                    successCount++;
+                    if (i < model.getRowCount()) {
+                        model.setValueAt("Generated", i, 6);
+                    }
+                } else {
+                    Utils.LogUtils.warn("PDF generation returned null for Employee ID: {}", empId);
+                    failCount++;
+                    failedRecords.add(new FailedRecord(empId, emp.name,
+                            "PDF Generation returned null", "Check Logs"));
+                }
+            } catch (Exception ex) {
+                Utils.LogUtils.error("PDF generation failed for Employee ID {}: {}", empId, ex.getMessage(), ex);
+                failCount++;
+                failedRecords.add(new FailedRecord(empId, emp.name,
+                        "PDF Error: " + ex.getMessage(), "Check PDF templates or permissions"));
+            }
+        }
+
+        Utils.LogUtils.info("Salary slip generation completed. Success={}, Failed={}", successCount, failCount);
+        updateDashboardStats();
+
+        // Sequence after the PDF slips: (1) consolidated payroll sheet, (2) bank upload .xls.
+        java.io.File outDir = new java.io.File(outputDir);
+        java.io.File payrollSheet = null;
+        try {
+            payrollSheet = Services.PayrollSheetWriter.write(currentRawCsvData, outDir, formattedMonth);
+        } catch (Exception ex) {
+            Utils.LogUtils.error("Failed to write payroll sheet: {}", ex.getMessage(), ex);
+            failedRecords.add(new FailedRecord("-", "Payroll sheet",
+                    "CSV write failed: " + ex.getMessage(), "Close the file if open, check permissions"));
+        }
+
+        java.io.File bankFile = null;
+        try {
+            bankFile = Services.BankFileWriter.write(currentRawCsvData, outDir, formattedMonth);
+        } catch (Exception ex) {
+            Utils.LogUtils.error("Failed to write bank upload file: {}", ex.getMessage(), ex);
+            failedRecords.add(new FailedRecord("-", "Bank file",
+                    "XLS write failed: " + ex.getMessage(), "Close the file if open, check the template"));
+        }
+
+        String sheetLine = (payrollSheet != null ? "<br><p style='color:#777777;'>Payroll sheet: " + payrollSheet.getName() + "</p>" : "")
+                + (bankFile != null ? "<p style='color:#777777;'>Bank file: " + bankFile.getName() + "</p>" : "");
+
+        if (failCount > 0 || unmatchedHrms > 0) {
+            JPanel p = new JPanel(new BorderLayout(15, 0));
+            JLabel icon = new JLabel("");
+            icon.setFont(new Font("Segoe MDL2 Assets", Font.PLAIN, 40));
+            icon.setForeground(ORANGE);
+            p.add(icon, BorderLayout.WEST);
+            JLabel msg = new JLabel(
+                    "<html><h3 style='margin:0; padding:0; color:#173463;'>Generation Completed with Warnings</h3>"
+                            + "<p style='margin-top:8px;'>Successfully generated: <b>" + successCount + "</b> slips</p>"
+                            + (failCount > 0 ? "<p style='color:#dc2626;'>Failed to generate: <b>" + failCount + "</b> slips</p>" : "")
+                            + (unmatchedHrms > 0 ? "<p style='color:#d97706;'>HRMS records with no Master CTC match: <b>" + unmatchedHrms + "</b></p>" : "")
+                            + sheetLine
+                            + "<br><p style='color:#777777;'>Opening HR Failed Records for details...</p></html>");
+            msg.setFont(FONT);
+            p.add(msg, BorderLayout.CENTER);
+            JOptionPane.showMessageDialog(this, p, "Generation Result", JOptionPane.PLAIN_MESSAGE);
+            showFailedRecordsDialog();
+        } else {
+            JPanel p = new JPanel(new BorderLayout(15, 0));
+            JLabel icon = new JLabel("");
+            icon.setFont(new Font("Segoe MDL2 Assets", Font.PLAIN, 40));
+            icon.setForeground(GREEN);
+            p.add(icon, BorderLayout.WEST);
+            JLabel msg = new JLabel(
+                    "<html><h3 style='margin:0; padding:0; color:#173463;'>Generation Successful!</h3>"
+                            + "<p style='margin-top:8px;'>Successfully generated <b>" + successCount + "</b> salary slips.</p>"
+                            + (payrollSheet != null ? "<p>Payroll sheet: <b>" + payrollSheet.getName() + "</b></p>" : "")
+                            + (bankFile != null ? "<p>Bank file: <b>" + bankFile.getName() + "</b></p>" : "")
+                            + "<br><p style='color:#777777;'>Saved to:<br>" + outputDir + "</p></html>");
+            msg.setFont(FONT);
+            p.add(msg, BorderLayout.CENTER);
+            JOptionPane.showMessageDialog(this, p, "Generation Result", JOptionPane.PLAIN_MESSAGE);
+        }
+    }
+
+    /**
+     * Flags employees that appear in the imported HRMS data (loan EMI, reimbursement
+     * or LOP leave) but have no matching row in the Master CTC file, so their figures
+     * would be silently dropped. Each is added to the HR Failed Records report.
+     *
+     * @return the number of distinct unmatched HRMS employees
+     */
+    private int reportUnmatchedHrmsEmployees(java.util.List<Services.CsvReaderService.EmployeeSalary> employees) {
+        java.util.Set<String> csvCodes = new java.util.HashSet<>();
+        for (Services.CsvReaderService.EmployeeSalary e : employees) {
+            if (e.eCode != null && !e.eCode.trim().isEmpty()) {
+                csvCodes.add(e.eCode.trim());
+            }
+        }
+
+        java.util.LinkedHashMap<String, String> unmatched = new java.util.LinkedHashMap<>();
+        if (hrmsLoanData != null && hrmsLoanData.installments != null) {
+            for (Services.LoanService.Installment inst : hrmsLoanData.installments) {
+                if (inst.employee_id != null && !csvCodes.contains(inst.employee_id.trim())) {
+                    unmatched.putIfAbsent(inst.employee_id.trim(), inst.employee_name);
+                }
+            }
+        }
+        if (hrmsReimbursementData != null && hrmsReimbursementData.claims != null) {
+            for (Services.ReimbursementService.Claim claim : hrmsReimbursementData.claims) {
+                if (claim.employee_id != null && !csvCodes.contains(claim.employee_id.trim())) {
+                    unmatched.putIfAbsent(claim.employee_id.trim(), claim.employee_name);
+                }
+            }
+        }
+        if (hrmsLeaveData != null && hrmsLeaveData.data != null) {
+            for (String code : hrmsLeaveData.data.keySet()) {
+                if (code != null && !csvCodes.contains(code.trim())) {
+                    unmatched.putIfAbsent(code.trim(), "");
+                }
+            }
+        }
+
+        for (java.util.Map.Entry<String, String> en : unmatched.entrySet()) {
+            failedRecords.add(new FailedRecord(
+                    en.getKey(),
+                    en.getValue() == null ? "" : en.getValue(),
+                    "Present in HRMS but not in the Master CTC file - figures not applied",
+                    "Add the employee to Master CTC, or ignore"));
+        }
+        if (!unmatched.isEmpty()) {
+            Utils.LogUtils.warn("{} HRMS employee(s) had no Master CTC match: {}", unmatched.size(), unmatched.keySet());
+        }
+        return unmatched.size();
+    }
+
+    /**
+     * Opens the Configuration dialog for setting the permanent paths of the
+     * Master CTC CSV file (the salary-structure source) and the HDFC Enet bank
+     * template .xls. Paths are validated and persisted via
+     * {@link Services.ConfigService}; neither file is modified. On a successful
+     * save the Master CTC file is loaded into the table.
+     */
+    private void showConfigurationDialog() {
+        JDialog dialog = new JDialog(this, "Configuration", true);
+        dialog.setSize(640, 380);
+        dialog.setLocationRelativeTo(this);
+        dialog.setLayout(new BorderLayout(10, 10));
+        dialog.getContentPane().setBackground(BG);
+
+        JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 20, 15));
+        topPanel.setOpaque(false);
+        JLabel titleLbl = new JLabel("Configuration");
+        titleLbl.setFont(FONT_HEADING);
+        titleLbl.setForeground(TEXT_HEADING);
+        topPanel.add(titleLbl);
+
+        JPanel centerPanel = new JPanel();
+        centerPanel.setOpaque(false);
+        centerPanel.setLayout(new javax.swing.BoxLayout(centerPanel, javax.swing.BoxLayout.Y_AXIS));
+        centerPanel.setBorder(BorderFactory.createEmptyBorder(6, 24, 6, 24));
+
+        JLabel help = new JLabel("<html>Set the fixed locations the app reads on every "
+                + "\"Generate Slips\". These files are read, never overwritten.</html>");
+        help.setFont(FONT_SUB);
+        help.setForeground(TEXT_MUTED);
+        help.setAlignmentX(Component.LEFT_ALIGNMENT);
+        help.setBorder(BorderFactory.createEmptyBorder(0, 0, 12, 0));
+        centerPanel.add(help);
+
+        JTextField ctcField = addConfigRow(centerPanel, dialog, "Master CTC File Path (.csv):",
+                Services.ConfigService.getMasterCtcPath(), "csv", "CSV files");
+        centerPanel.add(javax.swing.Box.createVerticalStrut(14));
+        JTextField bankField = addConfigRow(centerPanel, dialog,
+                "Bank Template File Path (.xls)  —  leave blank to use the bundled template:",
+                Services.ConfigService.getBankTemplatePath(), "xls", "Excel 97-2003 (.xls)");
+
+        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 24, 15));
+        bottomPanel.setOpaque(false);
+
+        JButton saveBtn = new JButton("Save");
+        saveBtn.setFont(FONT_BOLD);
+        saveBtn.setForeground(WHITE);
+        saveBtn.setBackground(GREEN);
+        saveBtn.setBorderPainted(false);
+        saveBtn.setFocusPainted(false);
+        saveBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        saveBtn.setPreferredSize(new Dimension(120, 38));
+        saveBtn.addActionListener(ev -> {
+            String ctcPath = ctcField.getText().trim();
+            String bankPath = bankField.getText().trim();
+
+            String ctcErr = Services.ConfigService.validatePath(ctcPath);
+            if (ctcErr != null) {
+                JOptionPane.showMessageDialog(dialog, ctcErr, "Invalid Master CTC File", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            String bankErr = Services.ConfigService.validateBankTemplatePath(bankPath);
+            if (bankErr != null) {
+                JOptionPane.showMessageDialog(dialog, bankErr, "Invalid Bank Template", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            try {
+                Services.ConfigService.saveMasterCtcPath(ctcPath);
+                Services.ConfigService.saveBankTemplatePath(bankPath);
+                masterCtcPath = ctcPath;
+                Utils.LogUtils.info("Configuration saved. Master CTC: {} | Bank template: {}",
+                        ctcPath, bankPath.isEmpty() ? "(bundled)" : bankPath);
+                JOptionPane.showMessageDialog(dialog,
+                        "Configuration saved.",
+                        "Configuration Saved", JOptionPane.INFORMATION_MESSAGE);
+                dialog.dispose();
+                loadCsvData(ctcPath, null, true, true);
+            } catch (Exception ex) {
+                Utils.LogUtils.error("Failed to save configuration: {}", ex.getMessage(), ex);
+                JOptionPane.showMessageDialog(dialog,
+                        "Could not save the configuration: " + ex.getMessage(),
+                        "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        JButton cancelBtn = new JButton("Cancel");
+        cancelBtn.setFont(FONT_BOLD);
+        cancelBtn.setForeground(WHITE);
+        cancelBtn.setBackground(RED);
+        cancelBtn.setBorderPainted(false);
+        cancelBtn.setFocusPainted(false);
+        cancelBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        cancelBtn.setPreferredSize(new Dimension(120, 38));
+        cancelBtn.addActionListener(ev -> dialog.dispose());
+
+        bottomPanel.add(saveBtn);
+        bottomPanel.add(cancelBtn);
+
+        dialog.add(topPanel, BorderLayout.NORTH);
+        dialog.add(centerPanel, BorderLayout.CENTER);
+        dialog.add(bottomPanel, BorderLayout.SOUTH);
+        dialog.setVisible(true);
+    }
+
+    /**
+     * Adds a "label + text field + Browse" row to the Configuration dialog's body.
+     *
+     * @return the created text field
+     */
+    private JTextField addConfigRow(JPanel parent, JDialog dialog, String label, String value,
+            String ext, String filterDesc) {
+        JLabel lbl = new JLabel(label);
+        lbl.setFont(FONT_BOLD);
+        lbl.setForeground(TEXT_BODY);
+        lbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JPanel row = new JPanel(new BorderLayout(8, 0));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 44));
+
+        JTextField field = new JTextField(value == null ? "" : value);
+        field.setFont(FONT);
+        field.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(221, 221, 221), 1, true),
+                BorderFactory.createEmptyBorder(8, 12, 8, 12)));
+        field.setCaretPosition(0);
+
+        JButton browse = new JButton("Browse…");
+        browse.setFont(FONT_BOLD);
+        browse.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        browse.addActionListener(ev -> {
+            JFileChooser chooser = new JFileChooser();
+            chooser.setDialogTitle("Select file");
+            chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(filterDesc, ext));
+            String current = field.getText().trim();
+            if (!current.isEmpty()) {
+                java.io.File cur = new java.io.File(current);
+                if (cur.getParentFile() != null && cur.getParentFile().isDirectory()) {
+                    chooser.setCurrentDirectory(cur.getParentFile());
+                }
+            }
+            if (chooser.showOpenDialog(dialog) == JFileChooser.APPROVE_OPTION) {
+                field.setText(chooser.getSelectedFile().getAbsolutePath());
+                field.setCaretPosition(0);
+            }
+        });
+
+        row.add(field, BorderLayout.CENTER);
+        row.add(browse, BorderLayout.EAST);
+
+        parent.add(lbl);
+        parent.add(javax.swing.Box.createVerticalStrut(6));
+        parent.add(row);
+        return field;
+    }
+
+    /**
+     * On application start, loads the configured Master CTC file into the table if
+     * one is set and reachable. Does not delete previously generated PDFs and shows
+     * no success popup; a configured-but-missing file raises a single warning.
+     */
+    private void loadConfiguredMasterCtcOnStartup() {
+        if (!Services.ConfigService.isConfigured()) {
+            return;
+        }
+        String path = Services.ConfigService.getMasterCtcPath();
+        String err = Services.ConfigService.validatePath(path);
+        if (err != null) {
+            Utils.LogUtils.warn("Configured Master CTC file is not usable at startup: {}", err);
+            JOptionPane.showMessageDialog(this,
+                    err + "\n\nUse the Configuration button to update the path.",
+                    "Master CTC Not Available", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        masterCtcPath = path;
+        loadCsvData(path, null, false, false);
     }
 
     /**
@@ -1324,7 +1760,8 @@ public class SalarySlipGenerator extends JFrame {
             }
         });
 
-        // Month Filter Dropdown
+        // Payroll Month selector - the Master CTC file is month-agnostic, so the user
+        // picks the payroll month here. It drives the HRMS import and slip generation.
         monthCombo = new JComboBox<>();
         monthCombo.setFont(FONT);
         monthCombo.setBorder(BorderFactory.createCompoundBorder(
@@ -1332,12 +1769,16 @@ public class SalarySlipGenerator extends JFrame {
                 BorderFactory.createEmptyBorder(10, 14, 10, 14)));
         monthCombo.setBackground(WHITE);
         monthCombo.setPreferredSize(new Dimension(200, 0));
-        monthCombo.addActionListener(e -> {
-            if (monthCombo.getSelectedItem() != null) {
-                payrollMonthLabel.setText(monthCombo.getSelectedItem().toString() + " Payroll");
-            }
-            filterTable();
-        });
+        monthCombo.setToolTipText("Payroll month for HRMS import and slip generation");
+        java.time.format.DateTimeFormatter monthLabelFmt =
+                java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy", java.util.Locale.ENGLISH);
+        java.time.YearMonth firstPayrollMonth = java.time.YearMonth.now().minusMonths(1);
+        for (int i = 0; i < 12; i++) {
+            monthCombo.addItem(firstPayrollMonth.minusMonths(i).format(monthLabelFmt));
+        }
+        monthCombo.setSelectedIndex(0); // previous month
+        payrollMonthLabel.setText(monthCombo.getSelectedItem() + " Payroll");
+        monthCombo.addActionListener(e -> onPayrollMonthChanged());
 
         searchRow.add(searchField, BorderLayout.CENTER);
         searchRow.add(monthCombo, BorderLayout.EAST);
@@ -2538,7 +2979,9 @@ public class SalarySlipGenerator extends JFrame {
                 frame.table.setRowSorter(new TableRowSorter<>(frame.model));
                 Utils.LogUtils.info("LOG: Sorter set, setting frame visible");
                 frame.setVisible(true); // Launch!
-                Utils.LogUtils.info("LOG: Frame set visible, starting update check");
+                Utils.LogUtils.info("LOG: Frame set visible, loading configured Master CTC file");
+                frame.loadConfiguredMasterCtcOnStartup();
+                Utils.LogUtils.info("LOG: Startup Master CTC load done, starting update check");
                 Utils.GitUtils.startUpdateCheck(frame);
                 Utils.LogUtils.info("LOG: Update check started");
             } catch (Throwable t) {

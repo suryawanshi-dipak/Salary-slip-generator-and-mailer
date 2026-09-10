@@ -22,6 +22,8 @@ import com.google.gson.Gson;
 public class LoanService {
 
     private static final String CONFIG_FILE = new File("Salary-slip-generator-and-mailer/DATA/smtp.properties").exists() ? "Salary-slip-generator-and-mailer/DATA/smtp.properties" : "DATA/smtp.properties";
+    // Development default; override per environment via loan.api.url in smtp.properties
+    // (production HRMS: http://161.118.171.230/api/loans/payroll-export).
     private static final String DEFAULT_URL = "http://localhost:5000/api/loans/payroll-export";
     private static final String DEFAULT_KEY = "sk_live_test_payroll_key_9999";
 
@@ -148,7 +150,8 @@ public class LoanService {
         int statusCode = response.statusCode();
         String json = response.body();
 
-        Utils.LogUtils.info("API Response received. Status code: {}", statusCode);
+        Utils.LogUtils.info("Loan API response received. Status code: {}", statusCode);
+        Utils.LogUtils.info("Loan API response body: {}", json);
 
         Gson gson = new Gson();
         if (statusCode == 200) {

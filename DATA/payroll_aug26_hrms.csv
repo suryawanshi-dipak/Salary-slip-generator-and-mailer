@@ -1,0 +1,6 @@
+month,sr.no.,e.code,name,doj,total basic,total hra,total spl. allowance,total kra,gross salary,leaves availed,month days,days worked,basic,hra,spl. allowance,kra,net salary,pt,loan deducted,tds,total deduction,net pay,email,designation,bank name,bank a/c no.,performance bonus,office expense,leave payment
+Aug-26,1,VT001,Devdatta Dahanukar,01-Apr-19,40000,12000,20000,0,72000,0,30,30,40000,12000,20000,0,72000,200,0,2000,2200,69800,d.dahanukar@vitec.co.in,Senior Engineer,HDFC Bank,50100011112222,0,0,0
+Aug-26,2,VT003,Atul Jadhav,15-May-20,35000,10500,17500,0,63000,0,30,30,35000,10500,17500,0,63000,200,0,0,200,62800,a.jadhav@vitec.co.in,Engineer,ICICI Bank,00112233445566,0,0,0
+Aug-26,3,VT005,Nikhil More,10-Jan-21,30000,9000,15000,2000,56000,0,30,30,30000,9000,15000,2000,56000,200,0,0,200,55800,n.more@vitec.co.in,Analyst,SBI,33445566778899,0,0,0
+Aug-26,4,VT019,Dipak Suryawanshi,01-Jul-22,28000,8400,14000,0,50400,2,30,28,28000,8400,14000,0,50400,200,0,0,200,50200,d.suryavanshi@vitec.co.in,Associate Engineer,Axis Bank,77889900112233,0,0,0
+Aug-26,5,VT021,Shreyash Bari,22-Dec-23,25000,7500,12500,1500,46500,0,30,30,25000,7500,12500,1500,46500,200,0,0,200,46300,s.bari@vitec.co.in,Junior Engineer,Kotak Bank,99887766554433,0,0,0

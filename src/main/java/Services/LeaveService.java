@@ -19,6 +19,8 @@ import com.google.gson.Gson;
 public class LeaveService {
 
     private static final String CONFIG_FILE = new File("Salary-slip-generator-and-mailer/DATA/smtp.properties").exists() ? "Salary-slip-generator-and-mailer/DATA/smtp.properties" : "DATA/smtp.properties";
+    // Development default; override per environment via leave.api.url in smtp.properties
+    // (production HRMS: http://161.118.171.230/api/payroll-export/leaves).
     private static final String DEFAULT_URL = "http://localhost:5000/api/payroll-export/leaves";
     private static final String DEFAULT_KEY = "sk_live_test_payroll_key_9999";
 
@@ -27,7 +29,9 @@ public class LeaveService {
         public boolean success;
         public String month;
         public String message;
-        public Map<String, Double> data; // Maps Employee ID to LOP days
+        public Map<String, Double> data;       // Employee ID -> total leave days in the month
+        public Map<String, Double> lop;        // Employee ID -> unpaid (Loss of Pay) days
+        public Map<String, String> emp_types;  // Employee ID -> employment type (e.g. "Probation")
     }
 
     /**
@@ -124,7 +128,8 @@ public class LeaveService {
         int statusCode = response.statusCode();
         String json = response.body();
 
-        Utils.LogUtils.info("Leave API Response received. Status code: {}", statusCode);
+        Utils.LogUtils.info("Leave API response received. Status code: {}", statusCode);
+        Utils.LogUtils.info("Leave API response body: {}", json);
 
         Gson gson = new Gson();
         if (statusCode == 200) {
