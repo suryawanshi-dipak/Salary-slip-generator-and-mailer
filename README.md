@@ -64,6 +64,17 @@ mvn clean package
 ## Configuration
 This project has **no database**. All configuration lives in `DATA/smtp.properties`.
 
+### Where settings are actually saved (packaged .exe)
+Running from a source checkout, "Save" in the app writes straight to `DATA/smtp.properties`.
+The installed Windows `.exe` (built by `.github/workflows/main.yml` via `jpackage`) bundles that
+same file inside the install directory, which defaults to `C:\Program Files\SalarySlipGenerator\`
+and isn't writable without admin rights. To avoid an "Access is denied" error on Save,
+`Services.AppConfigStore` automatically redirects writes to
+`%LOCALAPPDATA%\SalarySlipGenerator\smtp.properties` (seeded from the bundled file the first
+time) whenever the bundled copy isn't writable; it's picked up automatically on the next read,
+merged over the bundled defaults. The sent-email ledger works the same way. Nothing to configure -
+if you can't write to the install folder, your changes just end up in `%LOCALAPPDATA%` instead.
+
 ### Master CTC file
 Set the path to the permanent `Master_CTC.CSV` from the **Configuration** button in the
 app (Browse → pick the file → Save). It is validated (exists, readable, `.csv`, has the

@@ -134,8 +134,8 @@ public class SalarySlipGenerator extends JFrame {
 
     // Column headers for the table
     private String[] cols = { "Emp ID", "Employee Name", "Designation",
-            "Basic Salary", "Net Salary", "Month",
-            "Slip Status", "Mail Status", "Action" };
+            "Basic Salary", "Reimbursement", "Leave Payment Deducted", "Leaves Availed", "Net Salary",
+            "Month", "Slip Status", "Mail Status", "Action" };
 
     // --------------------------------------------------------
     // HR Failed Records Data
@@ -380,6 +380,14 @@ public class SalarySlipGenerator extends JFrame {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** Returns the given numeric string, or "0" if it is null/blank/unparseable. */
+    private static String safeOrZero(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return "0";
+        }
+        return value.trim();
     }
 
     /**
@@ -731,7 +739,11 @@ public class SalarySlipGenerator extends JFrame {
 
         int matched = applyHrmsData(currentRawCsvData);
         for (int r = 0; r < currentRawCsvData.size() && r < model.getRowCount(); r++) {
-            model.setValueAt("₹" + currentRawCsvData.get(r).netPay, r, 4);
+            Services.CsvReaderService.EmployeeSalary rowEmp = currentRawCsvData.get(r);
+            model.setValueAt("₹" + safeOrZero(rowEmp.reimbursementAmount), r, 4);
+            model.setValueAt("₹" + safeOrZero(rowEmp.leaveDeduction), r, 5);
+            model.setValueAt(safeOrZero(rowEmp.leavesAvailed), r, 6);
+            model.setValueAt("₹" + rowEmp.netPay, r, 7);
         }
         Utils.LogUtils.info("Applied HRMS data to {} employee(s) before slip generation", matched);
 
@@ -759,7 +771,7 @@ public class SalarySlipGenerator extends JFrame {
                     Utils.LogUtils.info("Salary slip generated successfully for Employee ID: {}", empId);
                     successCount++;
                     if (i < model.getRowCount()) {
-                        model.setValueAt("Generated", i, 6);
+                        model.setValueAt("Generated", i, 9);
                     }
                 } else {
                     Utils.LogUtils.warn("PDF generation returned null for Employee ID: {}", empId);
@@ -1486,8 +1498,8 @@ public class SalarySlipGenerator extends JFrame {
         int sent = 0;
 
         for (int i = 0; i < total; i++) {
-            String slipStatus = (String) model.getValueAt(i, 6);
-            String mailStatus = (String) model.getValueAt(i, 7);
+            String slipStatus = (String) model.getValueAt(i, 9);
+            String mailStatus = (String) model.getValueAt(i, 10);
 
             if ("Generated".equals(slipStatus))
                 generated++;
@@ -1793,7 +1805,7 @@ public class SalarySlipGenerator extends JFrame {
         // -- Table Initialization --
         model = new DefaultTableModel(data, cols) {
             public boolean isCellEditable(int r, int c) {
-                return c == 8; // Only Action column is editable
+                return c == 11; // Only Action column is editable
             }
 
             public Class<?> getColumnClass(int c) {
@@ -1835,7 +1847,7 @@ public class SalarySlipGenerator extends JFrame {
         }
 
         // Column preferred widths
-        int[] widths = { 70, 160, 170, 110, 110, 100, 110, 100, 120 };
+        int[] widths = { 70, 160, 170, 110, 120, 150, 110, 110, 100, 110, 100, 120 };
         for (int i = 0; i < widths.length && i < cols.length; i++) {
             table.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
         }
@@ -1856,12 +1868,12 @@ public class SalarySlipGenerator extends JFrame {
                 lbl.setBackground(sel ? ROW_HOVER : WHITE);
 
                 // Specific styling for 'Net Salary' column
-                if (col == 4) {
+                if (col == 7) {
                     lbl.setForeground(GREEN);
                     lbl.setFont(FONT_BOLD);
                 }
                 // Specific styling for 'Slip Status' column
-                if (col == 6) {
+                if (col == 9) {
                     String v = val.toString();
                     if (v.equals("Generated")) {
                         lbl.setForeground(GREEN);
@@ -1875,7 +1887,7 @@ public class SalarySlipGenerator extends JFrame {
                     }
                 }
                 // Specific styling for 'Mail Status' column
-                if (col == 7) {
+                if (col == 10) {
                     String v = val.toString();
                     if (v.equals("Sent")) {
                         lbl.setForeground(GREEN);
@@ -1893,8 +1905,8 @@ public class SalarySlipGenerator extends JFrame {
         });
 
         // Setup custom renderer and editor for the Action column (buttons)
-        table.getColumnModel().getColumn(8).setCellRenderer(new ActionRenderer());
-        table.getColumnModel().getColumn(8).setCellEditor(new ActionEditor());
+        table.getColumnModel().getColumn(11).setCellRenderer(new ActionRenderer());
+        table.getColumnModel().getColumn(11).setCellEditor(new ActionEditor());
 
         // -- Scroll Pane --
         JScrollPane scroll = new JScrollPane(table);
@@ -1984,10 +1996,10 @@ public class SalarySlipGenerator extends JFrame {
 
                 boolean success = attemptSendSingleSlip(modelRow);
                 if (success) {
-                    model.setValueAt("Sent", modelRow, 7);
+                    model.setValueAt("Sent", modelRow, 10);
                     totalSent++;
                 } else {
-                    model.setValueAt("Failed", modelRow, 7);
+                    model.setValueAt("Failed", modelRow, 10);
                     totalFailed++;
                 }
             }
@@ -2232,13 +2244,13 @@ public class SalarySlipGenerator extends JFrame {
                 if (confirm == JOptionPane.YES_OPTION) {
                     boolean success = attemptSendSingleSlip(modelRow);
                     if (success) {
-                        model.setValueAt("Sent", modelRow, 7); // Update state to sent
+                        model.setValueAt("Sent", modelRow, 10); // Update state to sent
                         updateDashboardStats();
                         JOptionPane.showMessageDialog(this,
                                 "Salary slip sent to " + name + " successfully.",
                                 "Sent", JOptionPane.INFORMATION_MESSAGE);
                     } else {
-                        model.setValueAt("Failed", modelRow, 7);
+                        model.setValueAt("Failed", modelRow, 10);
                         JOptionPane.showMessageDialog(this,
                                 "Failed to send email to " + name + ". Check console for details.",
                                 "Error", JOptionPane.ERROR_MESSAGE);
@@ -2323,7 +2335,7 @@ public class SalarySlipGenerator extends JFrame {
             public boolean include(Entry<? extends DefaultTableModel, ? extends Object> entry) {
                 String name = entry.getStringValue(1).toLowerCase(); // Employee Name (Col 1)
                 String id = entry.getStringValue(0).toLowerCase(); // Employee ID (Col 0)
-                String m = entry.getStringValue(5); // Month (Col 5)
+                String m = entry.getStringValue(8); // Month (Col 8)
 
                 // Must match both the text search and the dropdown month selection
                 boolean matchText = name.contains(query) || id.contains(query);

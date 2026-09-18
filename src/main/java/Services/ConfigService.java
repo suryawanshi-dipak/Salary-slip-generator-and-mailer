@@ -1,7 +1,6 @@
 package Services;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Properties;
 
@@ -13,16 +12,14 @@ import java.util.Properties;
  * it out-of-band; the user points the application at it <b>once</b> from the
  * Configuration screen and it is then reused for every "Generate Slips" run.</p>
  *
- * <p>The path is persisted in {@code DATA/smtp.properties} under
- * {@code masterctc.file.path}, using the same file the HRMS API URL/key settings
- * already live in (see {@link LeaveService}). There is no database.</p>
+ * <p>The path is persisted under {@code masterctc.file.path} via
+ * {@link AppConfigStore}, the same store the HRMS API URL/key settings already
+ * live in (see {@link LeaveService}). There is no database. {@link AppConfigStore}
+ * transparently redirects the write to a per-user location when the app is
+ * installed somewhere read-only (e.g. Program Files) - callers here don't need to
+ * know which file it actually landed in.</p>
  */
 public class ConfigService {
-
-    private static final String CONFIG_FILE =
-            new File("Salary-slip-generator-and-mailer/DATA/smtp.properties").exists()
-                    ? "Salary-slip-generator-and-mailer/DATA/smtp.properties"
-                    : "DATA/smtp.properties";
 
     private static final String KEY_MASTER_CTC_PATH = "masterctc.file.path";
     private static final String KEY_BANK_TEMPLATE_PATH = "bankfile.template.path";
@@ -73,18 +70,7 @@ public class ConfigService {
     }
 
     private static void save(String key, String value, String comment) throws IOException {
-        Properties props = loadProperties();
-        props.setProperty(key, value != null ? value.trim() : "");
-
-        File file = new File(CONFIG_FILE);
-        File parent = file.getParentFile();
-        if (parent != null && !parent.exists()) {
-            parent.mkdirs();
-        }
-        try (FileOutputStream out = new FileOutputStream(file)) {
-            props.store(out, comment);
-            Utils.LogUtils.info("Saved {} to {}", key, CONFIG_FILE);
-        }
+        AppConfigStore.save(java.util.Map.of(key, value != null ? value.trim() : ""), comment);
     }
 
     /**
@@ -182,18 +168,6 @@ public class ConfigService {
     }
 
     private static Properties loadProperties() {
-        Properties props = new Properties();
-        try {
-            File propFile = new File("DATA/smtp.properties");
-            if (!propFile.exists()) {
-                propFile = new File("Salary-slip-generator-and-mailer/DATA/smtp.properties");
-            }
-            try (java.io.InputStream in = new java.io.FileInputStream(propFile)) {
-                props.load(in);
-            }
-        } catch (Exception e) {
-            System.err.println("Could not load smtp.properties: " + e.getMessage());
-        }
-        return props;
+        return AppConfigStore.load();
     }
 }

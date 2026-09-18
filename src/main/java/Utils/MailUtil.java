@@ -3,13 +3,10 @@ package Utils;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
@@ -39,41 +36,37 @@ import jakarta.mail.internet.MimeMultipart;
  * employee emails.
  *
  * DETAILED CAPABILITIES:
- * - SMTP Properties: Dynamically loads configuration from
- * `DATA/smtp.properties`.
- * - Idempotency (Ledger): Saves sent keys (`empId_month`) to
- * `DATA/sent_ledger.csv`
+ * - SMTP Properties: Dynamically loads configuration via
+ * {@link Services.AppConfigStore} (bundled `DATA/smtp.properties`, redirected to
+ * a per-user writable copy when the app is installed read-only).
+ * - Idempotency (Ledger): Saves sent keys (`empId_month`) to `sent_ledger.csv`
+ * (resolved the same way, via {@link Services.AppConfigStore#resolveDataFile})
  * to ensure we do not send duplicate emails if the dispatch process is re-run.
  * `isSent(empId, month)` is checked prior to triggering a send action.
  * - Jakarta Mail: Forms multi-part messages with greeting text and PDF
  * attachments.
  * - Retries: Securely attempts up to 2 dispatch retries with wait times on
  * network issues.
- * - Logging: Generates structured audit trails (`Logs/run_report_<month>.log`)
- * and
+ * - Logging: Generates structured audit trails under
+ * `<user.home>/Logs/run_report_<month>.log` and
  * uses standard SLF4J logs controlled by CsvReaderService.isLoggingEnabled.
  * ============================================================================
  */
 public class MailUtil {
 
-    private static final String CONFIG_FILE = new File("Salary-slip-generator-and-mailer/DATA/smtp.properties").exists() ? "Salary-slip-generator-and-mailer/DATA/smtp.properties" : "DATA/smtp.properties";
-    private static final String LEDGER_FILE = new File("Salary-slip-generator-and-mailer/DATA").exists() ? "Salary-slip-generator-and-mailer/DATA/sent_ledger.csv" : "DATA/sent_ledger.csv";
+    private static final File LEDGER_FILE = Services.AppConfigStore.resolveDataFile("sent_ledger.csv");
 
     private static Properties smtpProps;
     private static Set<String> sentKeys = new HashSet<>();
 
     static {
-        // Load configurations
-        smtpProps = new Properties();
-        try (FileInputStream in = new FileInputStream(CONFIG_FILE)) {
-            smtpProps.load(in);
-            Utils.LogUtils.info("SMTP configuration loaded successfully from {}", CONFIG_FILE);
-        } catch (IOException e) {
-            Utils.LogUtils.warn("Could not load config file {}: {}", CONFIG_FILE, e.getMessage());
-        }
+        // Load configuration (bundled defaults + any per-user override)
+        smtpProps = Services.AppConfigStore.load();
+        Utils.LogUtils.info("SMTP configuration loaded ({} propert{})",
+                smtpProps.size(), smtpProps.size() == 1 ? "y" : "ies");
 
         // Load ledger
-        if (Files.exists(Paths.get(LEDGER_FILE))) {
+        if (LEDGER_FILE.isFile()) {
             try (BufferedReader br = new BufferedReader(new FileReader(LEDGER_FILE))) {
                 String line;
                 while ((line = br.readLine()) != null) {
@@ -81,7 +74,8 @@ public class MailUtil {
                         sentKeys.add(line.trim());
                     }
                 }
-                Utils.LogUtils.info("Loaded {} sent email records from ledger", sentKeys.size());
+                Utils.LogUtils.info("Loaded {} sent email records from ledger: {}",
+                        sentKeys.size(), LEDGER_FILE.getAbsolutePath());
             } catch (IOException e) {
                 Utils.LogUtils.error("Error reading sent ledger: {}", e.getMessage());
             }
@@ -190,7 +184,9 @@ public class MailUtil {
      * @param error  Detailed error message if it failed, or null if successful
      */
     private static void logRun(String month, String empId, String status, String error) {
-        String logDir = "Logs";
+        // Alongside LogUtils' own log folder - always writable, unlike a relative
+        // path when the app is installed under Program Files.
+        String logDir = System.getProperty("user.home") + File.separator + "Logs";
         File dir = new File(logDir);
         if (!dir.exists())
             dir.mkdirs();

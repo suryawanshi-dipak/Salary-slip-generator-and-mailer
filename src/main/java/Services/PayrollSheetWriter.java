@@ -27,7 +27,7 @@ public class PayrollSheetWriter {
             "Leaves Availed", "Month Days", "Days Worked",
             "Basic", "HRA", "Spl. Allowance", "KRA",
             "Performance Bonus", "Office Expense", "Leave Payment", "Net Salary",
-            "PT", "Loan Deducted", "TDS", "Total Deduction", "Net Pay",
+            "PT", "Loan Deducted", "Leave Payment Deducted", "TDS", "Total Deduction", "Net Pay",
             "Email", "Designation", "Bank Name", "Bank A/c No."
     };
 
@@ -62,8 +62,8 @@ public class PayrollSheetWriter {
                         e.totalBasic, e.totalHra, e.totalSplAllowance, e.totalKra, e.grossSalary,
                         e.leavesAvailed, e.monthDays, e.daysWorked,
                         e.basic, e.hra, e.splAllowance, e.kra,
-                        e.performanceBonus, e.officeExpense, e.leavePayment, e.netSalary,
-                        e.pt, e.loanDeducted, e.tds, e.totalDeduction, e.netPay,
+                        e.performanceBonus, e.reimbursementAmount, e.leavePayment, e.netSalary,
+                        e.pt, e.loanDeducted, e.leaveDeduction, e.tds, e.totalDeduction, e.netPay,
                         e.email, e.designation, e.bankName, e.bankAccountNo
                 };
                 StringBuilder sb = new StringBuilder();

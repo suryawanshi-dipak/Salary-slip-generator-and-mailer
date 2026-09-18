@@ -1,8 +1,6 @@
 package Services;
 
 import java.io.File;
-
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -18,7 +16,6 @@ import com.google.gson.Gson;
  */
 public class LeaveService {
 
-    private static final String CONFIG_FILE = new File("Salary-slip-generator-and-mailer/DATA/smtp.properties").exists() ? "Salary-slip-generator-and-mailer/DATA/smtp.properties" : "DATA/smtp.properties";
     // Development default; override per environment via leave.api.url in smtp.properties
     // (production HRMS: http://161.118.171.230/api/payroll-export/leaves).
     private static final String DEFAULT_URL = "http://localhost:5000/api/payroll-export/leaves";
@@ -54,36 +51,14 @@ public class LeaveService {
      * Saves updated Leave API URL and Key to smtp.properties, preserving existing values.
      */
     public static void saveSettings(String url, String key) throws IOException {
-        Properties props = loadProperties();
-        props.setProperty("leave.api.url", url != null ? url.trim() : DEFAULT_URL);
-        props.setProperty("leave.api.key", key != null ? key.trim() : DEFAULT_KEY);
-        
-        File file = new File(CONFIG_FILE);
-        File parent = file.getParentFile();
-        if (parent != null && !parent.exists()) {
-            parent.mkdirs();
-        }
-        
-        try (FileOutputStream out = new FileOutputStream(file)) {
-            props.store(out, "Updated Leave API Settings");
-            Utils.LogUtils.info("Saved leave API settings to {}", CONFIG_FILE);
-        }
+        AppConfigStore.save(Map.of(
+                "leave.api.url", url != null ? url.trim() : DEFAULT_URL,
+                "leave.api.key", key != null ? key.trim() : DEFAULT_KEY
+        ), "Updated Leave API Settings");
     }
 
     private static Properties loadProperties() {
-        Properties props = new Properties();
-        try {
-            java.io.File propFile = new java.io.File("DATA/smtp.properties");
-            if (!propFile.exists()) {
-                propFile = new java.io.File("Salary-slip-generator-and-mailer/DATA/smtp.properties");
-            }
-            try (java.io.InputStream in = new java.io.FileInputStream(propFile)) {
-                props.load(in);
-            }
-        } catch (Exception e) {
-            System.err.println("Could not load smtp.properties: " + e.getMessage());
-        }
-        return props;
+        return AppConfigStore.load();
     }
 
     /**

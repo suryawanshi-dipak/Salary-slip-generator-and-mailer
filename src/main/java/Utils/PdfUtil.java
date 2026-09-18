@@ -201,7 +201,7 @@ public class PdfUtil {
         
         if (parseInteger(empData.leaveDeduction) > 0) {
             String label = "Leave Deduction";
-            if (parseInteger(empData.lopDays) > 0) {
+            if (parseDouble(empData.lopDays) > 0) {
                 label += " (LOP: " + safe(empData.lopDays) + ")";
             }
             deductions.add(new DeductionRow(label, safe(empData.leaveDeduction)));
@@ -434,6 +434,16 @@ public class PdfUtil {
             return 0;
         try {
             return Integer.parseInt(val.trim());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private static double parseDouble(String val) {
+        if (val == null || val.trim().isEmpty())
+            return 0;
+        try {
+            return Double.parseDouble(val.trim());
         } catch (NumberFormatException e) {
             return 0;
         }
