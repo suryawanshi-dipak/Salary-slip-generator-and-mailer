@@ -18,6 +18,11 @@ import Services.CsvReaderService.EmployeeSalary;
  *
  * <p>Produced by "Generate Slips" <b>after</b> the PDF slips, into the same
  * {@code ~/SalarySlips/<Mon-yy>/} folder, as {@code Salary_<mon>_<yyyy>.csv}.</p>
+ *
+ * <p>Unlike the PDF slip / bank file (where Reimbursement is deliberately excluded
+ * from Net Pay), this sheet's Net Salary and Net Pay columns <b>include</b> the
+ * Reimbursement amount - {@code emp.netSalary}/{@code emp.netPay} are recomputed
+ * here with it added back in, purely for this CSV's own totals.</p>
  */
 public class PayrollSheetWriter {
 
@@ -55,6 +60,10 @@ public class PayrollSheetWriter {
                 if (e.eCode == null || e.eCode.trim().isEmpty()) {
                     continue;
                 }
+                double reimb = parseD(e.reimbursementAmount);
+                String csvNetSalary = String.valueOf((int) Math.round(parseD(e.netSalary) + reimb));
+                String csvNetPay = String.valueOf((int) Math.round(parseD(e.netPay) + reimb));
+
                 String[] row = {
                         monthMmmYy,
                         (e.srNo == null || e.srNo.trim().isEmpty()) ? String.valueOf(sr) : e.srNo,
@@ -62,8 +71,8 @@ public class PayrollSheetWriter {
                         e.totalBasic, e.totalHra, e.totalSplAllowance, e.totalKra, e.grossSalary,
                         e.leavesAvailed, e.monthDays, e.daysWorked,
                         e.basic, e.hra, e.splAllowance, e.kra,
-                        e.performanceBonus, e.reimbursementAmount, e.leavePayment, e.netSalary,
-                        e.pt, e.loanDeducted, e.leaveDeduction, e.tds, e.totalDeduction, e.netPay,
+                        e.performanceBonus, e.reimbursementAmount, e.leavePayment, csvNetSalary,
+                        e.pt, e.loanDeducted, e.leaveDeduction, e.tds, e.totalDeduction, csvNetPay,
                         e.email, e.designation, e.bankName, e.bankAccountNo
                 };
                 StringBuilder sb = new StringBuilder();
@@ -90,6 +99,17 @@ public class PayrollSheetWriter {
             return "Salary_" + mon + "_" + ym.getYear() + ".csv";
         } catch (Exception ex) {
             return "Salary_" + (monthMmmYy == null ? "unknown" : monthMmmYy.replace("-", "_")) + ".csv";
+        }
+    }
+
+    private static double parseD(String s) {
+        if (s == null || s.trim().isEmpty()) {
+            return 0;
+        }
+        try {
+            return Double.parseDouble(s.trim());
+        } catch (NumberFormatException e) {
+            return 0;
         }
     }
 

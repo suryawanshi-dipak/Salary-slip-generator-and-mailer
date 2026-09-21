@@ -23,9 +23,14 @@ import Services.CsvReaderService.EmployeeSalary;
  *
  * <p>The template has three sheets: <b>Specifications</b> and <b>Sheet1</b> are
  * left exactly as they are; <b>Input Sheet</b> keeps its three header rows and
- * gets one payment row per employee from row 4 down. Column AC ("COPY … FROM …
- * HERE") is the template's own formula that comma-joins A→AB — it is rebuilt for
- * every data row and re-evaluated so the copy-paste text is correct.</p>
+ * gets payment rows from row 4 down. Column AC ("COPY … FROM … HERE") is the
+ * template's own formula that comma-joins A→AB — it is rebuilt for every data
+ * row and re-evaluated so the copy-paste text is correct.</p>
+ *
+ * <p>Each employee gets up to three separate transfer rows, same bank account /
+ * IFSC / email, different amount and narration: the base salary (Net Pay minus
+ * KRA, since KRA is included in Net Pay), KRA (if non-zero), and Reimbursement
+ * (if non-zero, since it is tracked separately and excluded from Net Pay).</p>
  */
 public class BankFileWriter {
 
@@ -65,7 +70,10 @@ public class BankFileWriter {
             outputDir.mkdirs();
         }
 
-        String narration = "SALARY FOR " + (monthMmmYy == null ? "" : monthMmmYy.replace("-", " "));
+        String monthLabel = monthMmmYy == null ? "" : monthMmmYy.replace("-", " ");
+        String salaryNarration = "SALARY FOR " + monthLabel;
+        String kraNarration = "KRA FOR " + monthLabel;
+        String reimbNarration = "REIMBURSEMENT FOR " + monthLabel;
         String valueDate = LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
 
         try (FileInputStream in = new FileInputStream(template);
@@ -91,24 +99,28 @@ public class BankFileWriter {
                     Utils.LogUtils.warn("Bank file: skipping {} - net pay is {}", e.eCode.trim(), e.netPay);
                     continue;
                 }
+                long kra = parseAmount(e.totalKra);
+                long reimb = parseAmount(e.reimbursementAmount);
+                long salary = netPay - kra;
 
-                Row row = sheet.getRow(rowIdx);
-                if (row == null) {
-                    row = sheet.createRow(rowIdx);
+                if (salary > 0) {
+                    Row row = getOrCreateRow(sheet, rowIdx);
+                    written++;
+                    fillRow(row, written, e, salary, salaryNarration, valueDate, rowIdx + 1);
+                    rowIdx++;
                 }
-                setString(row, COL_TXN_TYPE, "I");
-                setNumber(row, COL_BENE_CODE, written + 1);
-                setString(row, COL_ACCOUNT, e.bankAccountNo.trim());
-                setNumber(row, COL_AMOUNT, netPay);
-                setString(row, COL_BENE_NAME, trim(e.name, 40));
-                setString(row, COL_NARRATION, narration);
-                setString(row, COL_VALUE_DATE, valueDate);
-                setString(row, COL_IFSC, safe(e.ifscCode));
-                setString(row, COL_EMAIL, safe(e.email));
-                setCopyFormula(row, rowIdx + 1); // 1-based row number for the formula
-
-                rowIdx++;
-                written++;
+                if (kra > 0) {
+                    Row row = getOrCreateRow(sheet, rowIdx);
+                    written++;
+                    fillRow(row, written, e, kra, kraNarration, valueDate, rowIdx + 1);
+                    rowIdx++;
+                }
+                if (reimb > 0) {
+                    Row row = getOrCreateRow(sheet, rowIdx);
+                    written++;
+                    fillRow(row, written, e, reimb, reimbNarration, valueDate, rowIdx + 1);
+                    rowIdx++;
+                }
             }
 
             // Drop the template's leftover pre-filled formula rows below the data.
@@ -131,6 +143,25 @@ public class BankFileWriter {
             Utils.LogUtils.info("Bank upload file written: {} ({} payment rows)", out.getAbsolutePath(), written);
             return out;
         }
+    }
+
+    private static Row getOrCreateRow(Sheet sheet, int rowIdx) {
+        Row row = sheet.getRow(rowIdx);
+        return row != null ? row : sheet.createRow(rowIdx);
+    }
+
+    private static void fillRow(Row row, int beneCode, EmployeeSalary e, long amount, String narration,
+            String valueDate, int rowNum1Based) {
+        setString(row, COL_TXN_TYPE, "I");
+        setNumber(row, COL_BENE_CODE, beneCode);
+        setString(row, COL_ACCOUNT, e.bankAccountNo.trim());
+        setNumber(row, COL_AMOUNT, amount);
+        setString(row, COL_BENE_NAME, trim(e.name, 40));
+        setString(row, COL_NARRATION, narration);
+        setString(row, COL_VALUE_DATE, valueDate);
+        setString(row, COL_IFSC, safe(e.ifscCode));
+        setString(row, COL_EMAIL, safe(e.email));
+        setCopyFormula(row, rowNum1Based);
     }
 
     private static void setCopyFormula(Row row, int rowNum1Based) {

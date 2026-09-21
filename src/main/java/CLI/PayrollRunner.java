@@ -142,7 +142,7 @@ public class PayrollRunner {
             emp.totalDeduction = String.valueOf((int) Math.round(totalDeduction));
 
             double others = parseD(emp.performanceBonus) + parseD(emp.officeExpense) + parseD(emp.leavePayment);
-            double totalEarnings = basic + allowances + others + reimb;
+            double totalEarnings = basic + allowances + others;
             emp.netSalary = String.valueOf((int) Math.round(totalEarnings));
 
             double netPay = Math.max(0, totalEarnings - totalDeduction);

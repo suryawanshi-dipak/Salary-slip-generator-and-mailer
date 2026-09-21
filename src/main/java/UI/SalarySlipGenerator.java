@@ -600,7 +600,7 @@ public class SalarySlipGenerator extends JFrame {
                         + Double.parseDouble(emp.leavePayment);
             } catch (Exception e) {}
 
-            double totalEarnings = basic + allowances + others + reimb;
+            double totalEarnings = basic + allowances + others;
             emp.netSalary = String.valueOf((int) Math.round(totalEarnings));
 
             double netPay = totalEarnings - newTotalDeduction;

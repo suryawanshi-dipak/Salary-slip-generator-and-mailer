@@ -160,8 +160,8 @@ public class PdfUtil {
 
         // --- Earnings Table Preparation ---
         // We dynamically build the list of earnings to allow for row suppression.
-        // For example, Reimbursements will only be rendered if they are fetched
-        // successfully from the backend API and are greater than 0.
+        // Reimbursements are intentionally excluded from the slip (and from Net Pay) -
+        // they are still tracked in emp.reimbursementAmount for the consolidated payroll CSV.
         Utils.LogUtils.debug("Preparing earnings components for Employee ID: {}", empId);
         List<EarningRow> earnings = new ArrayList<>();
 
@@ -182,9 +182,6 @@ public class PdfUtil {
         }
         if (parseInteger(empData.leavePayment) != 0) {
             earnings.add(new EarningRow("Leave Payment", "", safe(empData.leavePayment)));
-        }
-        if (parseInteger(empData.reimbursementAmount) > 0) {
-            earnings.add(new EarningRow("Reimbursements", "", safe(empData.reimbursementAmount)));
         }
 
         // --- Deductions Table Preparation ---
