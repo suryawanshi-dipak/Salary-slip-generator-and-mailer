@@ -35,6 +35,17 @@ public class CsvReaderService {
 
     public static boolean isLoggingEnabled = true;
 
+    /**
+     * Strips any non-digit characters (e.g. a "NO." prefix some Master CTC
+     * files use) from a bank account number, leaving just the digits.
+     */
+    public static String digitsOnlyAccountNo(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        return raw.replaceAll("[^0-9]", "");
+    }
+
     public static class EmployeeSalary {
         public String month;
         public String srNo;
@@ -77,14 +88,9 @@ public class CsvReaderService {
         public String outstandingAmount;
 
         public String maskedBankAccountNo() {
-            if (bankAccountNo == null || bankAccountNo.trim().isEmpty()) {
+            String raw = CsvReaderService.digitsOnlyAccountNo(bankAccountNo);
+            if (raw.isEmpty()) {
                 return "";
-            }
-            String raw = bankAccountNo.trim();
-            for (char c : raw.toCharArray()) {
-                if (!Character.isDigit(c)) {
-                    return raw; // Return unchanged if contains non-digit
-                }
             }
             if (raw.length() <= 4) {
                 return raw;

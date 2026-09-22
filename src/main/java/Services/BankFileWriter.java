@@ -27,10 +27,13 @@ import Services.CsvReaderService.EmployeeSalary;
  * template's own formula that comma-joins A→AB — it is rebuilt for every data
  * row and re-evaluated so the copy-paste text is correct.</p>
  *
- * <p>Each employee gets up to three separate transfer rows, same bank account /
- * IFSC / email, different amount and narration: the base salary (Net Pay minus
- * KRA, since KRA is included in Net Pay), KRA (if non-zero), and Reimbursement
- * (if non-zero, since it is tracked separately and excluded from Net Pay).</p>
+ * <p>Each employee gets one Salary row (the full Net Pay, KRA included) and,
+ * only if non-zero, a second separate Reimbursement row - same bank account /
+ * IFSC / email, different amount and narration - since Reimbursement is
+ * tracked separately and excluded from Net Pay.</p>
+ *
+ * <p>Bank account numbers are written digits-only: some Master CTC files store
+ * them with a "NO." (or similar) prefix, which is stripped before writing.</p>
  */
 public class BankFileWriter {
 
@@ -72,7 +75,6 @@ public class BankFileWriter {
 
         String monthLabel = monthMmmYy == null ? "" : monthMmmYy.replace("-", " ");
         String salaryNarration = "SALARY FOR " + monthLabel;
-        String kraNarration = "KRA FOR " + monthLabel;
         String reimbNarration = "REIMBURSEMENT FOR " + monthLabel;
         String valueDate = LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
 
@@ -99,26 +101,17 @@ public class BankFileWriter {
                     Utils.LogUtils.warn("Bank file: skipping {} - net pay is {}", e.eCode.trim(), e.netPay);
                     continue;
                 }
-                long kra = parseAmount(e.totalKra);
                 long reimb = parseAmount(e.reimbursementAmount);
-                long salary = netPay - kra;
 
-                if (salary > 0) {
-                    Row row = getOrCreateRow(sheet, rowIdx);
-                    written++;
-                    fillRow(row, written, e, salary, salaryNarration, valueDate, rowIdx + 1);
-                    rowIdx++;
-                }
-                if (kra > 0) {
-                    Row row = getOrCreateRow(sheet, rowIdx);
-                    written++;
-                    fillRow(row, written, e, kra, kraNarration, valueDate, rowIdx + 1);
-                    rowIdx++;
-                }
+                Row row = getOrCreateRow(sheet, rowIdx);
+                written++;
+                fillRow(row, written, e, netPay, salaryNarration, valueDate, rowIdx + 1);
+                rowIdx++;
+
                 if (reimb > 0) {
-                    Row row = getOrCreateRow(sheet, rowIdx);
+                    Row reimbRow = getOrCreateRow(sheet, rowIdx);
                     written++;
-                    fillRow(row, written, e, reimb, reimbNarration, valueDate, rowIdx + 1);
+                    fillRow(reimbRow, written, e, reimb, reimbNarration, valueDate, rowIdx + 1);
                     rowIdx++;
                 }
             }
@@ -154,7 +147,7 @@ public class BankFileWriter {
             String valueDate, int rowNum1Based) {
         setString(row, COL_TXN_TYPE, "I");
         setNumber(row, COL_BENE_CODE, beneCode);
-        setString(row, COL_ACCOUNT, e.bankAccountNo.trim());
+        setString(row, COL_ACCOUNT, CsvReaderService.digitsOnlyAccountNo(e.bankAccountNo));
         setNumber(row, COL_AMOUNT, amount);
         setString(row, COL_BENE_NAME, trim(e.name, 40));
         setString(row, COL_NARRATION, narration);
