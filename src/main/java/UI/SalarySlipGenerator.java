@@ -291,10 +291,10 @@ public class SalarySlipGenerator extends JFrame {
                             java.time.YearMonth parsedRunMonth = java.time.YearMonth.parse(runMonth, monthFormat);
                             java.time.YearMonth currentMonth = java.time.YearMonth.now();
 
-                            if (!parsedRunMonth.isBefore(currentMonth)) {
+                            if (parsedRunMonth.isAfter(currentMonth)) {
                                 JOptionPane.showMessageDialog(SalarySlipGenerator.this,
-                                        "Cannot process salary slips for the current or future months. "
-                                                + "Please select a past payroll month.",
+                                        "Cannot process salary slips for future months. "
+                                                + "Please select a past or current payroll month.",
                                         "Invalid Run Month", JOptionPane.ERROR_MESSAGE);
                                 return;
                             }
@@ -1784,11 +1784,11 @@ public class SalarySlipGenerator extends JFrame {
         monthCombo.setToolTipText("Payroll month for HRMS import and slip generation");
         java.time.format.DateTimeFormatter monthLabelFmt =
                 java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy", java.util.Locale.ENGLISH);
-        java.time.YearMonth firstPayrollMonth = java.time.YearMonth.now().minusMonths(1);
+        java.time.YearMonth firstPayrollMonth = java.time.YearMonth.now();
         for (int i = 0; i < 12; i++) {
             monthCombo.addItem(firstPayrollMonth.minusMonths(i).format(monthLabelFmt));
         }
-        monthCombo.setSelectedIndex(0); // previous month
+        monthCombo.setSelectedIndex(0); // current running month
         payrollMonthLabel.setText(monthCombo.getSelectedItem() + " Payroll");
         monthCombo.addActionListener(e -> onPayrollMonthChanged());
 
@@ -1944,7 +1944,7 @@ public class SalarySlipGenerator extends JFrame {
         sendAllBtn.addActionListener(e -> {
             if (!canSendSlipsForCurrentMonth()) {
                 JOptionPane.showMessageDialog(this,
-                        "Sending salary slips is restricted to the previous month only. You can only view older slips.",
+                        "Sending salary slips is restricted to the current and previous month only. You can only view older slips.",
                         "Action Blocked", JOptionPane.WARNING_MESSAGE);
                 return;
             }
@@ -2437,8 +2437,9 @@ public class SalarySlipGenerator extends JFrame {
         try {
             java.time.format.DateTimeFormatter monthFormat = java.time.format.DateTimeFormatter.ofPattern("MMM-yy", java.util.Locale.ENGLISH);
             java.time.YearMonth runMonth = java.time.YearMonth.parse(getFormattedMonth(), monthFormat);
-            java.time.YearMonth prevMonth = java.time.YearMonth.now().minusMonths(1);
-            return runMonth.equals(prevMonth);
+            java.time.YearMonth currentMonth = java.time.YearMonth.now();
+            java.time.YearMonth prevMonth = currentMonth.minusMonths(1);
+            return runMonth.equals(currentMonth) || runMonth.equals(prevMonth);
         } catch (Exception e) {
             return false;
         }
@@ -2447,7 +2448,7 @@ public class SalarySlipGenerator extends JFrame {
     private boolean attemptSendSingleSlip(int modelRow) {
         if (!canSendSlipsForCurrentMonth()) {
             JOptionPane.showMessageDialog(this,
-                    "Sending salary slips is restricted to the previous month only. You can only view older slips.",
+                    "Sending salary slips is restricted to the current and previous month only. You can only view older slips.",
                     "Action Blocked", JOptionPane.WARNING_MESSAGE);
             return false;
         }
@@ -2534,7 +2535,7 @@ public class SalarySlipGenerator extends JFrame {
             }
         }
         if (defaultMonth.isEmpty()) {
-            defaultMonth = java.time.YearMonth.now().minusMonths(1).toString();
+            defaultMonth = java.time.YearMonth.now().toString();
         }
         JTextField monthField = new JTextField(defaultMonth);
         monthField.setFont(FONT);
@@ -2696,7 +2697,7 @@ public class SalarySlipGenerator extends JFrame {
             }
         }
         if (defaultMonth.isEmpty()) {
-            defaultMonth = java.time.YearMonth.now().minusMonths(1).toString();
+            defaultMonth = java.time.YearMonth.now().toString();
         }
         JTextField monthField = new JTextField(defaultMonth);
         monthField.setFont(FONT);
@@ -2858,7 +2859,7 @@ public class SalarySlipGenerator extends JFrame {
             }
         }
         if (defaultMonth.isEmpty()) {
-            defaultMonth = java.time.YearMonth.now().minusMonths(1).toString();
+            defaultMonth = java.time.YearMonth.now().toString();
         }
         JTextField monthField = new JTextField(defaultMonth);
         monthField.setFont(FONT);
