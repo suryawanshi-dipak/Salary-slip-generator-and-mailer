@@ -78,6 +78,7 @@ public class CsvReaderService {
         public String performanceBonus;
         public String officeExpense;
         public String leavePayment;
+        public String transactionType; // dev 107
         
         // API Injected Fields
         // Integration fields dynamically injected via backend API queries
@@ -356,6 +357,7 @@ public class CsvReaderService {
                 emp.performanceBonus = safeGet(cols, columnMap, "performance bonus");
                 emp.officeExpense = safeGet(cols, columnMap, "office expense");
                 emp.leavePayment = safeGet(cols, columnMap, "leave payment");
+                emp.transactionType = safeGet(cols, columnMap, "transaction type"); // dev 107
                 Utils.LogUtils.debug("Employee data mapped successfully for E.Code: {}", emp.eCode);
 
                 // --- Month Consistency Check (FR-19) ---

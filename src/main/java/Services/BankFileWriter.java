@@ -41,7 +41,7 @@ public class BankFileWriter {
     private static final String INPUT_SHEET = "Input Sheet";
 
     // 0-based column indices on the Input Sheet
-    private static final int COL_TXN_TYPE = 0;   // A
+    private static final int COL_TXN_TYPE = 0;   // A (Transaction Type) // dev 107
     private static final int COL_BENE_CODE = 1;  // B
     private static final int COL_ACCOUNT = 2;    // C
     private static final int COL_AMOUNT = 3;     // D
@@ -145,7 +145,11 @@ public class BankFileWriter {
 
     private static void fillRow(Row row, int beneCode, EmployeeSalary e, long amount, String narration,
             String valueDate, int rowNum1Based) {
-        setString(row, COL_TXN_TYPE, "I");
+        // dev 107: Set transaction type from Master CTC (Column AA), defaulting to "I" if blank
+        String txnType = (e.transactionType != null && !e.transactionType.trim().isEmpty())
+                ? e.transactionType.trim()
+                : "I"; // dev 107
+        setString(row, COL_TXN_TYPE, txnType); // dev 107
         setNumber(row, COL_BENE_CODE, beneCode);
         setString(row, COL_ACCOUNT, CsvReaderService.digitsOnlyAccountNo(e.bankAccountNo));
         setNumber(row, COL_AMOUNT, amount);
